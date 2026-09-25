@@ -1,5 +1,5 @@
 {
   "name": "colorcity999-etsy-bridge",
   "main": "worker.js",
-  "compatibility_date": "2026-09-26"
+  "compatibility_date": "2026-09-25"
 }
