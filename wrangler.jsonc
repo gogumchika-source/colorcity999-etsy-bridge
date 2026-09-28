@@ -1,5 +1,21 @@
 {
+  "$schema": "https://unpkg.com/wrangler@latest/config-schema.json",
   "name": "colorcity999-etsy-bridge",
   "main": "worker.js",
-  "compatibility_date": "2026-09-25"
+  "compatibility_date": "2026-09-25",
+  "kv_namespaces": [
+    {
+      "binding": "ETSY_KV"
+    }
+  ],
+  "secrets": {
+    "required": [
+      "ETSY_KEYSTRING",
+      "ETSY_SHARED_SECRET",
+      "BRIDGE_API_SECRET"
+    ]
+  },
+  "observability": {
+    "enabled": true
+  }
 }
