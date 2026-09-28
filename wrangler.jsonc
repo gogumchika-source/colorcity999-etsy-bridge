@@ -5,7 +5,8 @@
   "compatibility_date": "2026-09-25",
   "kv_namespaces": [
     {
-      "binding": "ETSY_KV"
+      "binding": "ETSY_KV",
+      "id": "8c55fa296e6b49d682697f9275d7c813"
     }
   ],
   "secrets": {
