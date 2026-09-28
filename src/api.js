@@ -47,9 +47,10 @@ export async function getShop(env) {
     return fetchJson(await etsyRequest(env, "/shops/" + encodeURIComponent(record.shopId)));
   }
 
-  const shop = await fetchJson(
+  const payload = await fetchJson(
     await etsyRequest(env, "/users/" + encodeURIComponent(record.userId) + "/shops")
   );
+  const shop = Array.isArray(payload) ? payload[0] : (payload && payload.results ? payload.results[0] : payload);
 
   if (!shop?.shop_id) throw httpError(404, "No Etsy shop was found for the connected account.");
 
