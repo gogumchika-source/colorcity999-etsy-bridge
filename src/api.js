@@ -13,7 +13,7 @@ export async function getConnectionStatus(env) {
     let shopName = record.shopName || null;
 
     if (shopId) {
-      const shop = await fetchJson(etsyRequest(env, "/shops/" + encodeURIComponent(shopId), { headers: {} }));
+      const shop = await fetchJson(await etsyRequest(env, "/shops/" + encodeURIComponent(shopId), { headers: {} }));
       shopId = shop.shop_id || shopId;
       shopName = shop.shop_name || shopName;
     }
