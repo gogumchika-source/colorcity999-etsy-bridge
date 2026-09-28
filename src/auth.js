@@ -154,7 +154,10 @@ async function fetchOwnerShop(env, userId, accessToken) {
     }
   );
   if (!response.ok) throw new Error("Shop discovery failed with status " + response.status + ".");
-  return response.json();
+  const payload = await response.json();
+  if (Array.isArray(payload)) return payload[0] || null;
+  if (Array.isArray(payload?.results)) return payload.results[0] || null;
+  return payload?.shop_id ? payload : null;
 }
 
 function getUserIdFromAccessToken(accessToken) {
