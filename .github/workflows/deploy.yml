@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: colorcity999-etsy-bridge-production
@@ -78,3 +78,16 @@ jobs:
           name: colorcity999-listings-audit
           path: /tmp/colorcity999-listings.json
           retention-days: 7
+
+      - name: Publish temporary audit snapshot
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p audit
+          cp /tmp/colorcity999-listings.json audit/live-listings.json
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add audit/live-listings.json
+          git commit -m "chore: temporary live listing audit snapshot"
+          git push
