@@ -26,3 +26,34 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: deploy --config wrangler.jsonc
+
+      - name: Validate live Worker routes
+        run: |
+          node --input-type=module <<'NODE'
+          const base = "https://colorcity999-etsy-bridge.gogumchika.workers.dev";
+          const check = (condition, message) => { if (!condition) throw new Error(message); };
+
+          const health = await fetch(base + "/", { redirect: "manual" });
+          check(health.status === 200, "Health route did not return HTTP 200.");
+          const healthData = await health.json();
+          check(healthData.service === "ColorCity999 Etsy Bridge" && healthData.status === "online", "Health response did not match the bridge.");
+          console.log("Health route: HTTP 200, service online.");
+
+          const start = await fetch(base + "/oauth/start", { redirect: "manual" });
+          const destination = new URL(start.headers.get("location") || "https://invalid/");
+          const cookie = start.headers.get("set-cookie") || "";
+          check(start.status === 302 && destination.hostname === "www.etsy.com" && destination.pathname === "/oauth/connect", "OAuth start did not redirect to Etsy.");
+          check(destination.searchParams.has("client_id") && destination.searchParams.has("code_challenge") && destination.searchParams.get("code_challenge_method") === "S256", "OAuth redirect is missing client ID or PKCE parameters.");
+          check(cookie.includes("oauth_session=") && cookie.includes("HttpOnly") && cookie.includes("Secure"), "OAuth session cookie is missing expected security flags.");
+          console.log("OAuth start: HTTP 302 to Etsy with client ID, PKCE, and secure session cookie.");
+
+          const callback = await fetch(base + "/oauth/callback", { redirect: "manual" });
+          check(callback.status === 400, "OAuth callback did not reject missing authorization data.");
+          console.log("OAuth callback guard: HTTP 400 on missing authorization data.");
+
+          for (const route of ["/api/status", "/api/shop"]) {
+            const response = await fetch(base + route, { redirect: "manual" });
+            check(response.status === 401, route + " did not require bridge authentication.");
+          }
+          console.log("Protected API routes: HTTP 401 without bearer credentials.");
+          NODE
