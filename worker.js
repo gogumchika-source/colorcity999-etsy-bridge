@@ -26,13 +26,15 @@ export default {
       if (url.pathname === "/api/status") {
         if (request.method !== "GET") return json({ error: "Method not allowed" }, 405);
         requireBridgeAuth(request, env);
-        return json(await getConnectionStatus(env));
+        const allowRefresh = request.headers.get("X-Bridge-No-Refresh") !== "true";
+        return json(await getConnectionStatus(env, { allowRefresh }));
       }
 
       if (url.pathname === "/api/shop") {
         if (request.method !== "GET") return json({ error: "Method not allowed" }, 405);
         requireBridgeAuth(request, env);
-        return json(await getShop(env));
+        const allowRefresh = request.headers.get("X-Bridge-No-Refresh") !== "true";
+        return json(await getShop(env, { allowRefresh }));
       }
 
       return json({ error: "Not found" }, 404);
