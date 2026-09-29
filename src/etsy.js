@@ -40,17 +40,20 @@ export async function etsyRequest(env, path, options = {}) {
 }
 
 async function rawEtsyRequest(env, path, accessToken, options) {
+  const bodyIsForm = typeof URLSearchParams !== "undefined" && options.body instanceof URLSearchParams;
   return fetch("https://api.etsy.com/v3/application" + path, {
     method: options.method || "GET",
     headers: {
       "x-api-key": getEtsyKeystring(env) + ":" + env.ETSY_SHARED_SECRET,
       Authorization: "Bearer " + accessToken,
       Accept: "application/json",
-      ...(options.body ? { "Content-Type": "application/json" } : {}),
+      ...(options.body && !options.headers?.["Content-Type"]
+        ? { "Content-Type": bodyIsForm ? "application/x-www-form-urlencoded; charset=utf-8" : "application/json" }
+        : {}),
       ...(options.headers || {}),
     },
     body: options.body
-      ? typeof options.body === "string"
+      ? typeof options.body === "string" || bodyIsForm
         ? options.body
         : JSON.stringify(options.body)
       : undefined,
