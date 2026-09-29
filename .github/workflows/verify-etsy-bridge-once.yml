@@ -1,0 +1,76 @@
+name: Temporary production bridge verification
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/verify-etsy-bridge-once.yml
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check protected production endpoints without refreshing
+        env:
+          BRIDGE_API_SECRET: ${{ secrets.BRIDGE_API_SECRET }}
+        run: |
+          node --input-type=module <<'NODE'
+          const secret = process.env.BRIDGE_API_SECRET;
+          if (!secret) {
+            console.log("API_STATUS " + JSON.stringify({ http: "NOT_RUN" }));
+            console.log("API_SHOP " + JSON.stringify({ http: "NOT_RUN" }));
+            process.exitCode = 1;
+          } else {
+            const base = "https://colorcity999-etsy-bridge.gogumchika.workers.dev";
+            const headers = {
+              Authorization: `Bearer ${secret}`,
+              "X-Bridge-No-Refresh": "true",
+            };
+            const safeText = (value) => typeof value === "string"
+              ? value.replace(/[^a-zA-Z0-9 _.-]/g, "").slice(0, 80)
+              : null;
+            async function request(path) {
+              try {
+                const response = await fetch(base + path, {
+                  method: "GET",
+                  headers,
+                  signal: AbortSignal.timeout(20000),
+                });
+                let body = null;
+                try { body = await response.json(); } catch {}
+                return { http: response.status, body };
+              } catch {
+                return { http: "NETWORK_ERROR", body: null };
+              }
+            }
+            const status = await request("/api/status");
+            const statusBody = status.body && typeof status.body === "object" ? status.body : {};
+            console.log("API_STATUS " + JSON.stringify({
+              http: status.http,
+              connected: typeof statusBody.connected === "boolean" ? statusBody.connected : null,
+              provider: safeText(statusBody.provider),
+              shopId: safeText(statusBody.shopId),
+              shopName: safeText(statusBody.shopName),
+              accessTokenValid: typeof statusBody.accessTokenValid === "boolean" ? statusBody.accessTokenValid : null,
+            }));
+
+            const shop = await request("/api/shop");
+            const shopBody = shop.body && typeof shop.body === "object" ? shop.body : {};
+            console.log("API_SHOP " + JSON.stringify({
+              http: shop.http,
+              shop_id: typeof shopBody.shop_id === "number" ? shopBody.shop_id : safeText(shopBody.shop_id),
+              shop_name: safeText(shopBody.shop_name),
+            }));
+
+            if (status.http !== 200 || shop.http !== 200 ||
+                statusBody.connected !== true || statusBody.accessTokenValid !== true ||
+                !shopBody.shop_id || !shopBody.shop_name) {
+              process.exitCode = 1;
+            }
+          }
+          NODE
