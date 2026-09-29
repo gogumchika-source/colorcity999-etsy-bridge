@@ -168,7 +168,7 @@ function getUserIdFromAccessToken(accessToken) {
 }
 
 function getEtsyKeystring(env) {
-  const value = env.ETSY_KEYSTRING || env.ETCY_KEYSTRING;
+  const value = env.ETSY_KEYSTRING;
   if (!value) throw Object.assign(new Error("Etsy application keystring is not configured."), { status: 503 });
   return value;
 }
