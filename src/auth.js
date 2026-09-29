@@ -121,18 +121,23 @@ export async function handleOAuthCallback(request, env, { redirectUri }) {
 
   await env.ETSY_KV.put("etsy:oauth", JSON.stringify(record));
 
+  let shopDiscovered = false;
   try {
     const shop = await fetchOwnerShop(env, userId, token.access_token);
     if (shop?.shop_id) {
       record.shopId = shop.shop_id;
       record.shopName = shop.shop_name || null;
       await env.ETSY_KV.put("etsy:oauth", JSON.stringify(record));
+      shopDiscovered = true;
     }
   } catch (error) {
     console.error("Etsy shop discovery failed after authorization.", { message: error?.message });
   }
 
-  return new Response("ColorCity999 is now authorized with Etsy. You can close this page.", {
+  const completionMessage = shopDiscovered
+    ? "ColorCity999 is authorized with Etsy, and the shop API responded successfully. You can close this page."
+    : "Etsy authorization and token storage succeeded, but shop discovery did not complete. You can close this page; the connection can be checked through the protected API.";
+  return new Response(completionMessage, {
     status: 200,
     headers: {
       "Content-Type": "text/plain; charset=utf-8",
