@@ -28,6 +28,8 @@ jobs:
           command: deploy --config wrangler.jsonc
 
       - name: Validate live Worker routes
+        env:
+          BRIDGE_API_SECRET: ${{ secrets.BRIDGE_API_SECRET }}
         run: |
           node --input-type=module <<'NODE'
           const base = "https://colorcity999-etsy-bridge.gogumchika.workers.dev";
@@ -56,4 +58,14 @@ jobs:
             check(response.status === 401, route + " did not require bridge authentication.");
           }
           console.log("Protected API routes: HTTP 401 without bearer credentials.");
+
+          check(!!process.env.BRIDGE_API_SECRET, "BRIDGE_API_SECRET secret is missing from workflow.");
+          const listings = await fetch(base + "/api/listings?limit=100", {
+            headers: { Authorization: "Bearer " + process.env.BRIDGE_API_SECRET }
+          });
+          check(listings.status === 200, "Listings API did not return HTTP 200.");
+          const listingsData = await listings.json();
+          check(Array.isArray(listingsData.results), "Listings API response did not contain a results array.");
+          console.log("Listings API: HTTP 200, authenticated read succeeded.");
+          console.log("Listings returned:", listingsData.results.length);
           NODE
