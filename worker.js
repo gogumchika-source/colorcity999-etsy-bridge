@@ -1,5 +1,5 @@
 import { getAuthorizationUrl, handleOAuthCallback, requireBridgeAuth } from "./src/auth.js";
-import { getConnectionStatus, getShop } from "./src/api.js";
+import { getConnectionStatus, getShop, getListings, getListing, updateListing } from "./src/api.js";
 
 const REDIRECT_URI = "https://colorcity999-etsy-bridge.gogumchika.workers.dev/oauth/callback";
 const SCOPES = "listings_r listings_w shops_r";
@@ -35,6 +35,37 @@ export default {
         requireBridgeAuth(request, env);
         const allowRefresh = request.headers.get("X-Bridge-No-Refresh") !== "true";
         return json(await getShop(env, { allowRefresh }));
+      }
+
+      if (url.pathname === "/api/listings") {
+        if (request.method !== "GET") return json({ error: "Method not allowed" }, 405);
+        requireBridgeAuth(request, env);
+        const allowRefresh = request.headers.get("X-Bridge-No-Refresh") !== "true";
+        const state = url.searchParams.get("state") || "active";
+        const limit = url.searchParams.get("limit") || "25";
+        const offset = url.searchParams.get("offset") || "0";
+        if (!["active", "inactive", "sold_out", "draft", "expired"].includes(state)) {
+          return json({ error: "Invalid state." }, 400);
+        }
+        return json(await getListings(env, { allowRefresh, state, limit, offset }));
+      }
+
+      const listingMatch = url.pathname.match(/^\/api\/listings\/(\d+)$/);
+      if (listingMatch) {
+        requireBridgeAuth(request, env);
+        const allowRefresh = request.headers.get("X-Bridge-No-Refresh") !== "true";
+        const listingId = listingMatch[1];
+
+        if (request.method === "GET") {
+          return json(await getListing(env, listingId, { allowRefresh }));
+        }
+
+        if (request.method === "PATCH") {
+          const body = await request.json();
+          return json(await updateListing(env, listingId, body, { allowRefresh }));
+        }
+
+        return json({ error: "Method not allowed" }, 405);
       }
 
       return json({ error: "Not found" }, 404);
