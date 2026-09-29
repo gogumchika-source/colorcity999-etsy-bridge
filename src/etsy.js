@@ -2,7 +2,7 @@ const ETSY_TOKEN_URL = "https://api.etsy.com/v3/public/oauth/token";
 const TOKEN_KEY = "etsy:oauth";
 const EXPIRY_SAFETY_SECONDS = 60;
 
-export async function getValidAccessToken(env) {
+export async function getValidAccessToken(env, { allowRefresh = true } = {}) {
   const record = await readTokenRecord(env);
   if (!record?.accessToken || !record?.refreshToken) throw httpError(503, "Etsy is not connected.");
 
@@ -10,14 +10,17 @@ export async function getValidAccessToken(env) {
     return record.accessToken;
   }
 
+  if (!allowRefresh) throw httpError(503, "Etsy token refresh is disabled for this request.");
   return refreshAccessToken(env, record);
 }
 
 export async function etsyRequest(env, path, options = {}) {
-  let accessToken = await getValidAccessToken(env);
+  const allowRefresh = options.allowRefresh !== false;
+  let accessToken = await getValidAccessToken(env, { allowRefresh });
   let response = await rawEtsyRequest(env, path, accessToken, options);
 
   if (response.status !== 401) return response;
+  if (!allowRefresh) throw httpError(502, "Etsy authorization was rejected; refresh is disabled for this request.");
 
   const latest = await readTokenRecord(env);
   if (!latest?.refreshToken) throw httpError(503, "Etsy is not connected.");
