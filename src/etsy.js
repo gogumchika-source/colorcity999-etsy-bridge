@@ -40,7 +40,7 @@ async function rawEtsyRequest(env, path, accessToken, options) {
   return fetch("https://api.etsy.com/v3/application" + path, {
     method: options.method || "GET",
     headers: {
-      "x-api-key": env.ETSY_KEYSTRING + ":" + env.ETSY_SHARED_SECRET,
+      "x-api-key": getEtsyKeystring(env) + ":" + env.ETSY_SHARED_SECRET,
       Authorization: "Bearer " + accessToken,
       Accept: "application/json",
       ...(options.body ? { "Content-Type": "application/json" } : {}),
@@ -62,7 +62,7 @@ async function refreshAccessToken(env, record) {
 
   const body = new URLSearchParams({
     grant_type: "refresh_token",
-    client_id: env.ETSY_KEYSTRING,
+    client_id: getEtsyKeystring(env),
     refresh_token: latest?.refreshToken || record.refreshToken,
   });
 
@@ -109,6 +109,12 @@ async function refreshAccessToken(env, record) {
 
 async function readTokenRecord(env) {
   return env.ETSY_KV.get(TOKEN_KEY, { type: "json" });
+}
+
+function getEtsyKeystring(env) {
+  const value = env.ETSY_KEYSTRING || env.ETCY_KEYSTRING;
+  if (!value) throw httpError(503, "Etsy application keystring is not configured.");
+  return value;
 }
 
 function httpError(status, message) {
