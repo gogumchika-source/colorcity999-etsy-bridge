@@ -69,11 +69,12 @@ jobs:
           console.log("Listings API: HTTP 200, authenticated read succeeded.");
           console.log("Listings returned:", listingsData.results.length);
           await import("node:fs/promises").then(fs => fs.writeFile("/tmp/colorcity999-listings.json", JSON.stringify(listingsData, null, 2)));
+          NODE
 
+      - name: Capture listing audit data
         if: success()
         uses: actions/upload-artifact@v4
         with:
           name: colorcity999-listings-audit
           path: /tmp/colorcity999-listings.json
           retention-days: 7
-          NODE
