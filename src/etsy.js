@@ -25,7 +25,7 @@ export async function etsyRequest(env, path, options = {}) {
   if (latest.accessToken && latest.accessToken !== accessToken) {
     accessToken = latest.accessToken;
   } else {
-    accessToken = await refreshAccessToken(env, latest);
+    accessToken = await refreshAccessToken(env, latest, true);
   }
 
   response = await rawEtsyRequest(env, path, accessToken, options);
@@ -54,9 +54,13 @@ async function rawEtsyRequest(env, path, accessToken, options) {
   });
 }
 
-async function refreshAccessToken(env, record) {
+async function refreshAccessToken(env, record, force = false) {
   const latest = await readTokenRecord(env);
-  if (latest?.accessToken && latest.expiresAt > Date.now() + EXPIRY_SAFETY_SECONDS * 1000) {
+  const latestTokenIsValid = latest?.accessToken && latest.expiresAt > Date.now() + EXPIRY_SAFETY_SECONDS * 1000;
+  if (latestTokenIsValid && latest.accessToken !== record.accessToken) {
+    return latest.accessToken;
+  }
+  if (!force && latestTokenIsValid) {
     return latest.accessToken;
   }
 
