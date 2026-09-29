@@ -112,7 +112,7 @@ async function readTokenRecord(env) {
 }
 
 function getEtsyKeystring(env) {
-  const value = env.ETSY_KEYSTRING || env.ETCY_KEYSTRING;
+  const value = env.ETSY_KEYSTRING;
   if (!value) throw httpError(503, "Etsy application keystring is not configured.");
   return value;
 }
