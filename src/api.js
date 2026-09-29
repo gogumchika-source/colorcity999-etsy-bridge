@@ -1,6 +1,6 @@
 import { etsyRequest, getValidAccessToken } from "./etsy.js";
 
-export async function getConnectionStatus(env) {
+export async function getConnectionStatus(env, { allowRefresh = true } = {}) {
   const record = await env.ETSY_KV.get("etsy:oauth", { type: "json" });
 
   if (!record?.refreshToken || !record?.userId) {
@@ -8,12 +8,12 @@ export async function getConnectionStatus(env) {
   }
 
   try {
-    const accessToken = await getValidAccessToken(env);
+    const accessToken = await getValidAccessToken(env, { allowRefresh });
     let shopId = record.shopId || null;
     let shopName = record.shopName || null;
 
     if (shopId) {
-      const shop = await fetchJson(await etsyRequest(env, "/shops/" + encodeURIComponent(shopId), { headers: {} }));
+      const shop = await fetchJson(await etsyRequest(env, "/shops/" + encodeURIComponent(shopId), { headers: {}, allowRefresh }));
       shopId = shop.shop_id || shopId;
       shopName = shop.shop_name || shopName;
     }
@@ -39,16 +39,16 @@ export async function getConnectionStatus(env) {
   }
 }
 
-export async function getShop(env) {
+export async function getShop(env, { allowRefresh = true } = {}) {
   const record = await env.ETSY_KV.get("etsy:oauth", { type: "json" });
   if (!record?.userId) throw httpError(503, "Etsy is not connected.");
 
   if (record.shopId) {
-    return fetchJson(await etsyRequest(env, "/shops/" + encodeURIComponent(record.shopId)));
+    return fetchJson(await etsyRequest(env, "/shops/" + encodeURIComponent(record.shopId), { allowRefresh }));
   }
 
   const payload = await fetchJson(
-    await etsyRequest(env, "/users/" + encodeURIComponent(record.userId) + "/shops")
+    await etsyRequest(env, "/users/" + encodeURIComponent(record.userId) + "/shops", { allowRefresh })
   );
   const shop = Array.isArray(payload) ? payload[0] : (payload && payload.results ? payload.results[0] : payload);
 
