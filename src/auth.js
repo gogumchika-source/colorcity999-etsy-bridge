@@ -16,7 +16,7 @@ async function createAuthorizationResponse(env, redirectUri, scopes) {
 
   const authUrl = new URL("https://www.etsy.com/oauth/connect");
   authUrl.searchParams.set("response_type", "code");
-  authUrl.searchParams.set("client_id", env.ETSY_KEYSTRING);
+  authUrl.searchParams.set("client_id", getEtsyKeystring(env));
   authUrl.searchParams.set("redirect_uri", redirectUri);
   authUrl.searchParams.set("scope", scopes);
   authUrl.searchParams.set("state", state);
@@ -73,7 +73,7 @@ export async function handleOAuthCallback(request, env, { redirectUri }) {
 
   const body = new URLSearchParams({
     grant_type: "authorization_code",
-    client_id: env.ETSY_KEYSTRING,
+    client_id: getEtsyKeystring(env),
     redirect_uri: redirectUri,
     code,
     code_verifier: parsed.verifier,
@@ -147,7 +147,7 @@ async function fetchOwnerShop(env, userId, accessToken) {
     "https://api.etsy.com/v3/application/users/" + encodeURIComponent(userId) + "/shops",
     {
       headers: {
-        "x-api-key": env.ETSY_KEYSTRING + ":" + env.ETSY_SHARED_SECRET,
+        "x-api-key": getEtsyKeystring(env) + ":" + env.ETSY_SHARED_SECRET,
         Authorization: "Bearer " + accessToken,
         Accept: "application/json",
       },
@@ -165,6 +165,12 @@ function getUserIdFromAccessToken(accessToken) {
   const userId = separator > 0 ? accessToken.slice(0, separator) : "";
   if (!/^\d+$/.test(userId)) throw new Error("Etsy access token did not contain a valid user ID.");
   return userId;
+}
+
+function getEtsyKeystring(env) {
+  const value = env.ETSY_KEYSTRING || env.ETCY_KEYSTRING;
+  if (!value) throw Object.assign(new Error("Etsy application keystring is not configured."), { status: 503 });
+  return value;
 }
 
 export function requireBridgeAuth(request, env) {
