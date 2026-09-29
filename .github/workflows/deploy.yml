@@ -68,4 +68,12 @@ jobs:
           check(Array.isArray(listingsData.results), "Listings API response did not contain a results array.");
           console.log("Listings API: HTTP 200, authenticated read succeeded.");
           console.log("Listings returned:", listingsData.results.length);
+          await import("node:fs/promises").then(fs => fs.writeFile("/tmp/colorcity999-listings.json", JSON.stringify(listingsData, null, 2)));
+
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: colorcity999-listings-audit
+          path: /tmp/colorcity999-listings.json
+          retention-days: 7
           NODE
