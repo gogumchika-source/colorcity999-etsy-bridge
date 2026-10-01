@@ -12,6 +12,9 @@ jobs:
   optimize:
     runs-on: ubuntu-latest
     steps:
+      - name: Wait for bridge deployment
+        run: sleep 20
+
       - name: Update all five live listings
         env:
           BRIDGE_API_SECRET: ${{ secrets.BRIDGE_API_SECRET }}
