@@ -105,7 +105,7 @@ export async function updateListing(env, listingId, fields, { allowRefresh = tru
 
   for (const [key, value] of Object.entries(payload)) {
     if (Array.isArray(value)) {
-      for (const item of value) body.append(key, item);
+      body.append(key, key === "tags" ? value.join(",") : value.join(","));
     } else {
       body.append(key, String(value));
     }
