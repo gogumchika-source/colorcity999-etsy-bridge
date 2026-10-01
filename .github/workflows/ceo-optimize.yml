@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Wait for bridge deployment
-        run: sleep 20
+        run: sleep 21
 
       - name: Update all five live listings
         env:
