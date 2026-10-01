@@ -10,7 +10,6 @@ permissions:
 
 jobs:
   optimize:
-    if: github.event.head_commit.message == 'CEO: optimize five live listings'
     runs-on: ubuntu-latest
     steps:
       - name: Update all five live listings
