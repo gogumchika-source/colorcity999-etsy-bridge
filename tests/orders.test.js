@@ -7,7 +7,7 @@ function makeEnv() {
   const record = {
     accessToken: "test-access-token",
     refreshToken: "test-refresh-token",
-    expiresAt: Date.now() + 60_000,
+    expiresAt: Date.now() + 600_000,
     userId: "12345",
     shopId: "98765",
     shopName: "ColorCity999",
@@ -47,7 +47,7 @@ test("connection health discovers and stores the shop when OAuth storage lacks a
   env.ETSY_KV.get = async () => ({
     accessToken: "test-access-token",
     refreshToken: "test-refresh-token",
-    expiresAt: Date.now() + 60_000,
+    expiresAt: Date.now() + 600_000,
     userId: "12345",
     shopId: null,
     shopName: null,
