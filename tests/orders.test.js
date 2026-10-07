@@ -74,6 +74,7 @@ test("orders endpoint rejects missing, reversed, or invalid windows before makin
     { minCreated: null, maxCreated: "1791400000" },
     { minCreated: "1791400000", maxCreated: "1791300000" },
     { minCreated: "not-a-time", maxCreated: "1791400000" },
+    { minCreated: "1791300000", maxCreated: "1791400000", offset: "12001" },
   ];
   for (const window of invalid) {
     await assert.rejects(
