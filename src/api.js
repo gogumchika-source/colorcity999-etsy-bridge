@@ -86,113 +86,99 @@ export async function getListings(env, { allowRefresh = true, state = "active", 
   );
 }
 
+export async function getOrders(env, {
+  allowRefresh = true,
+  minCreated,
+  maxCreated,
+  limit = "100",
+  offset = "0",
+} = {}) {
+  const minCreatedSeconds = parseRequiredTimestamp(minCreated, "min_created");
+  const maxCreatedSeconds = parseRequiredTimestamp(maxCreated, "max_created");
+  if (maxCreatedSeconds <= minCreatedSeconds) {
+    throw httpError(400, "max_created must be later than min_created.");
+  }
+
+  const safeLimit = parseBoundedInteger(limit, "limit", 1, 100);
+  const safeOffset = parseBoundedInteger(offset, "offset", 0, Number.MAX_SAFE_INTEGER);
+  const shop = await getShop(env, { allowRefresh });
+  const params = new URLSearchParams({
+    min_created: String(minCreatedSeconds),
+    max_created: String(maxCreatedSeconds),
+    limit: String(safeLimit),
+    offset: String(safeOffset),
+    sort_on: "created",
+    sort_order: "asc",
+  });
+  const payload = await fetchJson(
+    await etsyRequest(
+      env,
+      "/shops/" + encodeURIComponent(shop.shop_id) + "/receipts?" + params.toString(),
+      { allowRefresh }
+    )
+  );
+  const receipts = Array.isArray(payload.results) ? payload.results : [];
+  const totalCount = Number.isInteger(payload.count) ? payload.count : receipts.length;
+
+  return {
+    window: {
+      minCreated: minCreatedSeconds,
+      maxCreated: maxCreatedSeconds,
+      timezone: "UTC",
+    },
+    count: totalCount,
+    limit: safeLimit,
+    offset: safeOffset,
+    hasMore: safeOffset + receipts.length < totalCount,
+    results: receipts.map((receipt) => ({
+      createdTimestamp: receipt.created_timestamp ?? receipt.create_timestamp ?? null,
+      status: typeof receipt.status === "string" ? receipt.status : null,
+      paid: typeof receipt.is_paid === "boolean" ? receipt.is_paid : null,
+      canceled: typeof receipt.is_canceled === "boolean" ? receipt.is_canceled : null,
+      total: safeMoney(receipt.grandtotal),
+      items: Array.isArray(receipt.transactions)
+        ? receipt.transactions.map((transaction) => ({
+            listingId: transaction.listing_id ?? null,
+            title: typeof transaction.title === "string" ? transaction.title : null,
+            quantity: Number.isInteger(transaction.quantity) ? transaction.quantity : null,
+            price: safeMoney(transaction.price),
+          }))
+        : [],
+    })),
+  };
+}
+
+function parseRequiredTimestamp(value, name) {
+  const parsed = Number(value);
+  if (typeof value !== "string" || !value || String(parsed) !== value || !Number.isSafeInteger(parsed) || parsed < 946684800) {
+    throw httpError(400, name + " must be a supported Unix timestamp in seconds.");
+  }
+  return parsed;
+}
+
+function parseBoundedInteger(value, name, min, max) {
+  const parsed = Number(value);
+  if (typeof value !== "string" || !value || String(parsed) !== value || !Number.isSafeInteger(parsed) || parsed < min || parsed > max) {
+    throw httpError(400, name + " is outside the supported integer range.");
+  }
+  return parsed;
+}
+
+function safeMoney(value) {
+  if (!value || typeof value !== "object") return null;
+  if (!Number.isSafeInteger(value.amount) || !Number.isSafeInteger(value.divisor) || value.divisor <= 0) {
+    return null;
+  }
+  return {
+    amount: value.amount,
+    divisor: value.divisor,
+    currencyCode: typeof value.currency_code === "string" ? value.currency_code : null,
+  };
+}
+
 export async function getListing(env, listingId, { allowRefresh = true } = {}) {
   const id = parseListingId(listingId);
   return fetchJson(await etsyRequest(env, "/listings/" + id, { allowRefresh }));
-}
-
-export async function updateListing(env, listingId, fields, { allowRefresh = true } = {}) {
-  const id = parseListingId(listingId);
-  const shop = await getShop(env, { allowRefresh });
-  const existing = await getListing(env, id, { allowRefresh });
-
-  if (String(existing.shop_id) !== String(shop.shop_id)) {
-    throw httpError(403, "Listing does not belong to the connected Etsy shop.");
-  }
-
-  const payload = validateListingUpdate(fields);
-  const body = new URLSearchParams();
-
-  for (const [key, value] of Object.entries(payload)) {
-    if (Array.isArray(value)) {
-      body.append(key, key === "tags" ? value.join(",") : value.join(","));
-    } else {
-      body.append(key, String(value));
-    }
-  }
-
-  return fetchJson(
-    await etsyRequest(
-      env,
-      "/shops/" + encodeURIComponent(shop.shop_id) + "/listings/" + id,
-      {
-        method: "PATCH",
-        body,
-        allowRefresh,
-      }
-    )
-  );
-}
-
-const ALLOWED_UPDATE_FIELDS = new Set([
-  "title",
-  "description",
-  "tags",
-  "state",
-  "section_id",
-  "taxonomy_id",
-]);
-
-function validateListingUpdate(fields) {
-  if (!fields || typeof fields !== "object" || Array.isArray(fields)) {
-    throw httpError(400, "Request body must be a JSON object.");
-  }
-
-  const keys = Object.keys(fields);
-  if (!keys.length) throw httpError(400, "At least one listing field is required.");
-
-  for (const key of keys) {
-    if (!ALLOWED_UPDATE_FIELDS.has(key)) {
-      throw httpError(400, "Unsupported listing field: " + key);
-    }
-  }
-
-  const output = {};
-
-  if ("title" in fields) {
-    if (typeof fields.title !== "string" || !fields.title.trim()) {
-      throw httpError(400, "title must be a non-empty string.");
-    }
-    output.title = fields.title;
-  }
-
-  if ("description" in fields) {
-    if (typeof fields.description !== "string") {
-      throw httpError(400, "description must be a string.");
-    }
-    output.description = fields.description;
-  }
-
-  if ("tags" in fields) {
-    if (!Array.isArray(fields.tags) || fields.tags.length > 13) {
-      throw httpError(400, "tags must be an array with at most 13 items.");
-    }
-    for (const tag of fields.tags) {
-      if (typeof tag !== "string" || !tag.trim() || tag.length > 20) {
-        throw httpError(400, "Each tag must be a non-empty string of at most 20 characters.");
-      }
-    }
-    output.tags = fields.tags;
-  }
-
-  if ("state" in fields) {
-    if (!["active", "inactive"].includes(fields.state)) {
-      throw httpError(400, "state must be active or inactive.");
-    }
-    output.state = fields.state;
-  }
-
-  for (const key of ["section_id", "taxonomy_id"]) {
-    if (key in fields) {
-      const value = Number(fields[key]);
-      if (!Number.isInteger(value) || value < 1) {
-        throw httpError(400, key + " must be a positive integer.");
-      }
-      output[key] = value;
-    }
-  }
-
-  return output;
 }
 
 function parseListingId(value) {
