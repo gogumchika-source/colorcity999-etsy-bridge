@@ -100,7 +100,7 @@ export async function getOrders(env, {
   }
 
   const safeLimit = parseBoundedInteger(limit, "limit", 1, 100);
-  const safeOffset = parseBoundedInteger(offset, "offset", 0, Number.MAX_SAFE_INTEGER);
+  const safeOffset = parseBoundedInteger(offset, "offset", 0, 12000);
   const shop = await getShop(env, { allowRefresh });
   const params = new URLSearchParams({
     min_created: String(minCreatedSeconds),
