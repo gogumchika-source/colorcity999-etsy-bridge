@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: colorcity999-etsy-bridge-production
@@ -69,25 +69,4 @@ jobs:
           console.log("Listings API: HTTP 200, authenticated read succeeded.");
           console.log("Listings returned:", listingsData.results.length);
           await import("node:fs/promises").then(fs => fs.writeFile("/tmp/colorcity999-listings.json", JSON.stringify(listingsData, null, 2)));
-          NODE
-
-      - name: Capture listing audit data
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: colorcity999-listings-audit
-          path: /tmp/colorcity999-listings.json
-          retention-days: 7
-
-      - name: Publish temporary audit snapshot
-        if: success()
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          mkdir -p audit
-          cp /tmp/colorcity999-listings.json audit/live-listings.json
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add audit/live-listings.json
-          git commit -m "chore: temporary live listing audit snapshot"
-          git push
+          NODE\n
