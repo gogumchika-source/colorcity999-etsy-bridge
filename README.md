@@ -40,7 +40,8 @@ OAuth callback:
 Protected API:
 
 - `GET /api/status`
-- `GET /api/shop`\n- `GET /api/orders?min_created=<unix-seconds>&max_created=<unix-seconds>&limit=100&offset=0` (requires `transactions_r`; returns a bounded, PII-redacted summary)
+- `GET /api/shop`
+- `GET /api/orders?min_created=<unix-seconds>&max_created=<unix-seconds>&limit=100&offset=0` (requires `transactions_r`; returns a bounded, PII-redacted summary)
 
 ## Cloudflare setup
 
@@ -143,7 +144,11 @@ It never returns access or refresh tokens.
 
 Returns the connected Etsy shop resource from Etsy.
 
-It never returns the OAuth credentials used to retrieve it.\n\n### GET /api/orders\n\nReturns receipts only for the requested Unix timestamp window. Both `min_created` and `max_created` are required. The page size is 1 to 100. The response includes order status, timestamps, totals, and listing line items while excluding buyer names, email addresses, mailing addresses, and message text.
+It never returns the OAuth credentials used to retrieve it.
+
+### GET /api/orders
+
+Returns receipts only for the requested Unix timestamp window. Both `min_created` and `max_created` are required. The page size is 1 to 100. The response includes order status, timestamps, totals, and listing line items while excluding buyer names, email addresses, mailing addresses, and message text.
 
 ## Token refresh
 
