@@ -12,11 +12,11 @@ export async function getConnectionStatus(env, { allowRefresh = true } = {}) {
     let shopId = record.shopId || null;
     let shopName = record.shopName || null;
 
-    if (shopId) {
-      const shop = await fetchJson(await etsyRequest(env, "/shops/" + encodeURIComponent(shopId), { headers: {}, allowRefresh }));
-      shopId = shop.shop_id || shopId;
-      shopName = shop.shop_name || shopName;
-    }
+    const shop = shopId
+      ? await fetchJson(await etsyRequest(env, "/shops/" + encodeURIComponent(shopId), { headers: {}, allowRefresh }))
+      : await getShop(env, { allowRefresh });
+    shopId = shop.shop_id || shopId;
+    shopName = shop.shop_name || shopName;
 
     return {
       connected: true,
