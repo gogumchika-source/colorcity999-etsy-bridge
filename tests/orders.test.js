@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { getConnectionStatus, getOrders } from "../src/api.js";
+import worker from "../worker.js";
 
 function makeEnv() {
   const record = {
@@ -20,6 +21,22 @@ function makeEnv() {
     },
   };
 }
+
+test("listing edits are rejected by the read-only bridge", async () => {
+  const response = await worker.fetch(
+    new Request("https://bridge.test/api/listings/98765", {
+      method: "PATCH",
+      headers: {
+        Authorization: "Bearer test-bridge-secret",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ title: "Do not change" }),
+    }),
+    { BRIDGE_API_SECRET: "test-bridge-secret" }
+  );
+  assert.equal(response.status, 405);
+  assert.deepEqual(await response.json(), { error: "Method not allowed" });
+});
 
 test("connection health discovers and stores the shop when OAuth storage lacks a shop ID", async (t) => {
   const originalFetch = globalThis.fetch;
