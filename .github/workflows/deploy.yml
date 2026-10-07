@@ -68,5 +68,4 @@ jobs:
           check(Array.isArray(listingsData.results), "Listings API response did not contain a results array.");
           console.log("Listings API: HTTP 200, authenticated read succeeded.");
           console.log("Listings returned:", listingsData.results.length);
-          await import("node:fs/promises").then(fs => fs.writeFile("/tmp/colorcity999-listings.json", JSON.stringify(listingsData, null, 2)));
-          NODE\n
+          NODE
