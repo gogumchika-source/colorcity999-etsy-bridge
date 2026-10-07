@@ -1,0 +1,8 @@
+{
+  "name": "colorcity999-etsy-bridge",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test"
+  }
+}

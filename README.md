@@ -41,6 +41,7 @@ Protected API:
 
 - `GET /api/status`
 - `GET /api/shop`
+- `GET /api/orders?min_created=<unix-seconds>&max_created=<unix-seconds>&limit=100&offset=0` (requires `transactions_r`; returns a bounded, PII-redacted summary)
 
 ## Cloudflare setup
 
@@ -82,11 +83,11 @@ Register this exact OAuth callback in the Etsy developer application:
 
 `https://colorcity999-etsy-bridge.gogumchika.workers.dev/oauth/callback`
 
-The existing scopes are preserved:
+The bridge requests read-only access:
 
-`listings_r listings_w shops_r`
+`listings_r shops_r transactions_r`
 
-They should not be broadened without a concrete feature requirement.
+After this scope change, the Etsy owner must authorize the bridge again. The bridge no longer exposes a listing-write endpoint.
 
 ## Deploy
 
@@ -144,6 +145,16 @@ It never returns access or refresh tokens.
 Returns the connected Etsy shop resource from Etsy.
 
 It never returns the OAuth credentials used to retrieve it.
+
+The bridge does not scrape Etsy pages. Seller Stats such as visits, views, favorites, and traffic sources remain outside this API unless Etsy provides an approved endpoint or the owner connects an approved data source.
+
+### GET /api/orders
+
+Returns receipts only for the requested Unix timestamp window. Both `min_created` and `max_created` are required. The page size is 1 to 100. The response includes order status, timestamps, totals, and listing line items while excluding buyer names, email addresses, mailing addresses, and message text.
+
+## Automated health check
+
+The `ColorCity999 Bridge Health` workflow runs daily at 07:00 UTC (11:00 AM Asia/Dubai) and can also be started manually. It performs only GET requests, checks bridge authentication and Etsy shop/listing reads, and checks the orders endpoint when `transactions_r` is granted. It does not edit listings.
 
 ## Token refresh
 

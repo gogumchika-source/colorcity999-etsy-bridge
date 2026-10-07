@@ -1,0 +1,78 @@
+name: ColorCity999 Bridge Health
+
+on:
+  schedule:
+    - cron: "0 7 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: colorcity999-etsy-bridge-health
+  cancel-in-progress: true
+
+jobs:
+  health-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify bridge and read-only Etsy access
+        env:
+          BRIDGE_API_SECRET: ${{ secrets.BRIDGE_API_SECRET }}
+        run: |
+          node --input-type=module <<'NODE'
+          const base = "https://colorcity999-etsy-bridge.gogumchika.workers.dev";
+          const token = process.env.BRIDGE_API_SECRET;
+          if (!token) throw new Error("BRIDGE_API_SECRET is missing.");
+
+          const healthResponse = await fetch(base + "/", { redirect: "manual" });
+          if (!healthResponse.ok) throw new Error("Public bridge health check failed.");
+          const health = await healthResponse.json();
+          if (health.service !== "ColorCity999 Etsy Bridge" || health.status !== "online") {
+            throw new Error("Unexpected bridge health response.");
+          }
+
+          const unauthenticated = await fetch(base + "/api/status", { redirect: "manual" });
+          if (unauthenticated.status !== 401) {
+            throw new Error("Protected status endpoint did not reject unauthenticated access.");
+          }
+
+          const headers = { Authorization: "Bearer " + token };
+          const statusResponse = await fetch(base + "/api/status", { headers, redirect: "manual" });
+          if (!statusResponse.ok) throw new Error("Authenticated Etsy connection check failed.");
+          const status = await statusResponse.json();
+          if (status.connected !== true || status.accessTokenValid !== true || !status.shopId) {
+            throw new Error("Etsy connection is not ready or shop discovery is incomplete.");
+          }
+
+          const shopResponse = await fetch(base + "/api/shop", { headers, redirect: "manual" });
+          if (!shopResponse.ok) throw new Error("Read-only Etsy shop check failed.");
+
+          const listingsResponse = await fetch(base + "/api/listings?state=active&limit=100", {
+            headers,
+            redirect: "manual"
+          });
+          if (!listingsResponse.ok) throw new Error("Read-only Etsy listings check failed.");
+          const listings = await listingsResponse.json();
+          if (!Array.isArray(listings.results)) throw new Error("Listings response has an invalid shape.");
+
+          const scopes = typeof status.scope === "string" ? status.scope.trim().split(" ") : [];
+          console.log("Bridge, Etsy connection, shop read, and active listing read: healthy.");
+          console.log("Active listing records returned:", listings.results.length);
+          console.log("Order-read permission:", scopes.includes("transactions_r") ? "available" : "not yet granted");
+
+          if (scopes.includes("transactions_r")) {
+            const maxCreated = Math.floor(Date.now() / 1000);
+            const minCreated = maxCreated - 24 * 60 * 60;
+            const ordersResponse = await fetch(
+              base + "/api/orders?min_created=" + minCreated + "&max_created=" + maxCreated + "&limit=100",
+              { headers, redirect: "manual" }
+            );
+            if (!ordersResponse.ok) throw new Error("Read-only Etsy orders check failed.");
+            const orders = await ordersResponse.json();
+            if (!Array.isArray(orders.results) || orders.window?.minCreated !== minCreated || orders.window?.maxCreated !== maxCreated) {
+              throw new Error("Orders response window or shape is invalid.");
+            }
+            console.log("Read-only orders endpoint: healthy; receipts in window:", orders.count);
+          }
+          NODE
