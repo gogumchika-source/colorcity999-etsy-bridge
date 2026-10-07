@@ -1,21 +1,22 @@
-name: CEO Optimize Five Live Listings
+name: ColorCity999 Bridge Health
 
 on:
-  push:
-    branches:
-      - main
+  schedule:
+    - cron: "0 7 * * *"
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: colorcity999-etsy-bridge-health
+  cancel-in-progress: true
+
 jobs:
-  optimize:
+  health-check:
     runs-on: ubuntu-latest
     steps:
-      - name: Wait for bridge deployment
-        run: sleep 21
-
-      - name: Update all five live listings
+      - name: Verify bridge and read-only Etsy access
         env:
           BRIDGE_API_SECRET: ${{ secrets.BRIDGE_API_SECRET }}
         run: |
@@ -24,62 +25,39 @@ jobs:
           const token = process.env.BRIDGE_API_SECRET;
           if (!token) throw new Error("BRIDGE_API_SECRET is missing.");
 
-          const updates = {
-            "4561666517": {
-              title: "Cars Coloring Book for Kids, Printable Car Coloring Pages, Vehicle Activity Book, Digital PDF",
-              tags: ["cars coloring book","car coloring pages","kids coloring book","car activity book","printable car pages","vehicle coloring","kids printable pdf","preschool activity","screen free activity","travel activity kids","car lover kids","digital download","printable coloring"],
-              description: "🚗 Cars Coloring Book for Kids — 15 Printable Pages\n\nKeep little car lovers busy with 15 original car-themed coloring pages designed for creative, screen-free fun. Great for home, preschool, travel, rainy days, quiet time, or a fun activity at home.\n\n🎨 YOU'LL RECEIVE\n• 15 printable car coloring pages\n• High-quality PDF\n• A4 format\n• Instant digital download\n\n🖨️ HOW IT WORKS\nDownload the PDF, print the pages you want, and start coloring. You can print the pages at home for personal use.\n\nPlease note: This is a digital product. No physical item will be shipped. For personal use only.\n\n🌈 ColorCity999 — Color • Play • Joy • Adventure"
-            },
-            "4561715640": {
-              title: "Animals Coloring Book for Kids, Printable Animal Coloring Pages, Kids Activity Book, Digital PDF",
-              tags: ["animal coloring book","animal coloring page","kids coloring book","cute animal coloring","preschool activity","kids printable pdf","animal activity book","printable coloring","screen free activity","travel activity kids","wildlife coloring","digital download","easy coloring pages"],
-              description: "🐾 Animals Coloring Book for Kids — 15 Printable Pages\n\nExplore a fun world of animals with 15 original printable coloring pages made for creative, screen-free play. A simple activity for home, preschool, travel, rainy days, or quiet time.\n\n🎨 YOU'LL RECEIVE\n• 15 printable animal coloring pages\n• High-quality PDF\n• A4 format\n• Instant digital download\n\n🖨️ HOW IT WORKS\nDownload the PDF, print the pages you want, and start coloring. Print at home for personal use.\n\nPlease note: This is a digital product. No physical item will be shipped. For personal use only.\n\n🌈 ColorCity999 — Color • Play • Joy • Adventure"
-            },
-            "4561700465": {
-              title: "Farm Coloring Book for Kids, Farm Animal Coloring Pages, Printable Kids Activity Book, Digital PDF",
-              tags: ["farm coloring book","farm animal coloring","farm coloring pages","kids coloring book","farm activity book","printable farm pages","kids printable pdf","preschool activity","screen free activity","travel activity kids","farm kids activity","digital download","printable coloring"],
-              description: "🚜 Farm Coloring Book for Kids — 15 Printable Pages\n\nBring the fun of the farm to coloring time with 15 original printable farm-themed pages. A playful screen-free activity for home, preschool, travel, rainy days, or quiet time.\n\n🎨 YOU'LL RECEIVE\n• 15 printable farm coloring pages\n• High-quality PDF\n• A4 format\n• Instant digital download\n\n🖨️ HOW IT WORKS\nDownload the PDF, print the pages you want, and start coloring. Print at home for personal use.\n\nPlease note: This is a digital product. No physical item will be shipped. For personal use only.\n\n🌈 ColorCity999 — Color • Play • Joy • Adventure"
-            },
-            "4561706999": {
-              title: "Vehicles Coloring Book for Kids, Cars Trucks Planes Coloring Pages, Printable Kids Activity Book, Digital PDF",
-              tags: ["vehicles coloring","vehicle coloring","cars trucks coloring","kids coloring book","transport coloring","vehicle printable","kids printable pdf","preschool activity","screen free activity","travel activity kids","cars trucks planes","digital download","printable coloring"],
-              description: "🚗 Vehicles Coloring Book for Kids — 15 Printable Pages\n\nGet ready for a vehicle adventure with 15 original printable pages featuring fun transportation themes. Great for kids who love cars, trucks, buses, construction vehicles, and more.\n\n🎨 YOU'LL RECEIVE\n• 15 printable vehicle coloring pages\n• High-quality PDF\n• A4 format\n• Instant digital download\n\n🖨️ HOW IT WORKS\nDownload the PDF, print the pages you want, and start coloring. Print at home for personal use.\n\nPlease note: This is a digital product. No physical item will be shipped. For personal use only.\n\n🌈 ColorCity999 — Color • Play • Joy • Adventure"
-            },
-            "4561738444": {
-              title: "Superhero Coloring Book for Kids, Printable Superhero Coloring Pages, Kids Activity Book, Digital PDF",
-              tags: ["superhero coloring","superhero pages","hero coloring pages","kids coloring book","superhero activity","kids printable pdf","preschool activity","screen free activity","travel activity kids","action coloring book","hero activity book","digital download","printable coloring"],
-              description: "🦸 Superhero Coloring Book for Kids — 15 Printable Pages\n\nLet little heroes unleash their imagination with 15 original printable superhero-themed coloring pages. Perfect for creative play, screen-free activities, travel, rainy days, or quiet time.\n\n🎨 YOU'LL RECEIVE\n• 15 printable superhero coloring pages\n• High-quality PDF\n• A4 format\n• Instant digital download\n\n🖨️ HOW IT WORKS\nDownload the PDF, print the pages you want, and start coloring. Print at home for personal use.\n\nPlease note: This is a digital product. No physical item will be shipped. For personal use only.\n\n🌈 ColorCity999 — Color • Play • Joy • Adventure"
-            }
-          };
-
-          for (const [id, body] of Object.entries(updates)) {
-            const response = await fetch(base + "/api/listings/" + id, {
-              method: "PATCH",
-              headers: {
-                "Authorization": "Bearer " + token,
-                "Content-Type": "application/json"
-              },
-              body: JSON.stringify(body)
-            });
-            const text = await response.text();
-            if (!response.ok) throw new Error("Listing " + id + " update failed: HTTP " + response.status + " " + text);
-            console.log("Updated", id);
+          const healthResponse = await fetch(base + "/", { redirect: "manual" });
+          if (!healthResponse.ok) throw new Error("Public bridge health check failed.");
+          const health = await healthResponse.json();
+          if (health.service !== "ColorCity999 Etsy Bridge" || health.status !== "online") {
+            throw new Error("Unexpected bridge health response.");
           }
-          NODE
 
-      - name: Verify five optimized listings
-        env:
-          BRIDGE_API_SECRET: ${{ secrets.BRIDGE_API_SECRET }}
-        run: |
-          node --input-type=module <<'NODE'
-          const base = "https://colorcity999-etsy-bridge.gogumchika.workers.dev";
-          const ids = ["4561666517","4561715640","4561700465","4561706999","4561738444"];
-          for (const id of ids) {
-            const response = await fetch(base + "/api/listings/" + id, {
-              headers: { "Authorization": "Bearer " + process.env.BRIDGE_API_SECRET }
-            });
-            if (!response.ok) throw new Error("Verification failed for " + id + ": HTTP " + response.status);
-            const listing = await response.json();
-            console.log(id, "=>", listing.title, "|", (listing.tags || []).length, "tags");
+          const unauthenticated = await fetch(base + "/api/status", { redirect: "manual" });
+          if (unauthenticated.status !== 401) {
+            throw new Error("Protected status endpoint did not reject unauthenticated access.");
           }
+
+          const headers = { Authorization: "Bearer " + token };
+          const statusResponse = await fetch(base + "/api/status", { headers, redirect: "manual" });
+          if (!statusResponse.ok) throw new Error("Authenticated Etsy connection check failed.");
+          const status = await statusResponse.json();
+          if (status.connected !== true || status.accessTokenValid !== true || !status.shopId) {
+            throw new Error("Etsy connection is not ready or shop discovery is incomplete.");
+          }
+
+          const shopResponse = await fetch(base + "/api/shop", { headers, redirect: "manual" });
+          if (!shopResponse.ok) throw new Error("Read-only Etsy shop check failed.");
+
+          const listingsResponse = await fetch(base + "/api/listings?state=active&limit=100", {
+            headers,
+            redirect: "manual"
+          });
+          if (!listingsResponse.ok) throw new Error("Read-only Etsy listings check failed.");
+          const listings = await listingsResponse.json();
+          if (!Array.isArray(listings.results)) throw new Error("Listings response has an invalid shape.");
+
+          const scopes = typeof status.scope === "string" ? status.scope.split(/\\s+/) : [];
+          console.log("Bridge, Etsy connection, shop read, and active listing read: healthy.");
+          console.log("Active listing records returned:", listings.results.length);
+          console.log("Order-read permission:", scopes.includes("transactions_r") ? "available" : "not yet granted");
           NODE
