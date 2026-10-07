@@ -1,8 +1,8 @@
 import { getAuthorizationUrl, handleOAuthCallback, requireBridgeAuth } from "./src/auth.js";
-import { getConnectionStatus, getShop, getListings, getListing, updateListing } from "./src/api.js";
+import { getConnectionStatus, getShop, getListings, getListing, getOrders } from "./src/api.js";
 
 const REDIRECT_URI = "https://colorcity999-etsy-bridge.gogumchika.workers.dev/oauth/callback";
-const SCOPES = "listings_r listings_w shops_r";
+const SCOPES = "listings_r shops_r transactions_r";
 
 export default {
   async fetch(request, env) {
@@ -37,6 +37,19 @@ export default {
         return json(await getShop(env, { allowRefresh }));
       }
 
+      if (url.pathname === "/api/orders") {
+        if (request.method !== "GET") return json({ error: "Method not allowed" }, 405);
+        requireBridgeAuth(request, env);
+        const allowRefresh = request.headers.get("X-Bridge-No-Refresh") !== "true";
+        return json(await getOrders(env, {
+          allowRefresh,
+          minCreated: url.searchParams.get("min_created"),
+          maxCreated: url.searchParams.get("max_created"),
+          limit: url.searchParams.get("limit") ?? "100",
+          offset: url.searchParams.get("offset") ?? "0",
+        }));
+      }
+
       if (url.pathname === "/api/listings") {
         if (request.method !== "GET") return json({ error: "Method not allowed" }, 405);
         requireBridgeAuth(request, env);
@@ -58,11 +71,6 @@ export default {
 
         if (request.method === "GET") {
           return json(await getListing(env, listingId, { allowRefresh }));
-        }
-
-        if (request.method === "PATCH") {
-          const body = await request.json();
-          return json(await updateListing(env, listingId, body, { allowRefresh }));
         }
 
         return json({ error: "Method not allowed" }, 405);
