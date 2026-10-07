@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { getOrders } from "../src/api.js";
+import { getConnectionStatus, getOrders } from "../src/api.js";
 
 function makeEnv() {
   const record = {
@@ -20,6 +20,37 @@ function makeEnv() {
     },
   };
 }
+
+test("connection health discovers and stores the shop when OAuth storage lacks a shop ID", async (t) => {
+  const originalFetch = globalThis.fetch;
+  const stored = [];
+  t.after(() => { globalThis.fetch = originalFetch; });
+
+  const env = makeEnv();
+  env.ETSY_KV.get = async () => ({
+    accessToken: "test-access-token",
+    refreshToken: "test-refresh-token",
+    expiresAt: Date.now() + 60_000,
+    userId: "12345",
+    shopId: null,
+    shopName: null,
+    scope: "listings_r shops_r transactions_r",
+  });
+  env.ETSY_KV.put = async (_key, value) => { stored.push(JSON.parse(value)); };
+  globalThis.fetch = async (input) => {
+    if (String(input).endsWith("/users/12345/shops")) {
+      return Response.json({ results: [{ shop_id: 98765, shop_name: "ColorCity999" }] });
+    }
+    throw new Error("Unexpected mocked Etsy request.");
+  };
+
+  const status = await getConnectionStatus(env);
+  assert.equal(status.connected, true);
+  assert.equal(status.shopId, 98765);
+  assert.equal(status.shopName, "ColorCity999");
+  assert.equal(status.accessTokenValid, true);
+  assert.equal(stored.at(-1).shopId, 98765);
+});
 
 test("orders endpoint rejects missing, reversed, or invalid windows before making requests", async () => {
   const invalid = [
