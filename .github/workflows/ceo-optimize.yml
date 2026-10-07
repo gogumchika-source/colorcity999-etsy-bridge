@@ -60,4 +60,19 @@ jobs:
           console.log("Bridge, Etsy connection, shop read, and active listing read: healthy.");
           console.log("Active listing records returned:", listings.results.length);
           console.log("Order-read permission:", scopes.includes("transactions_r") ? "available" : "not yet granted");
+
+          if (scopes.includes("transactions_r")) {
+            const maxCreated = Math.floor(Date.now() / 1000);
+            const minCreated = maxCreated - 24 * 60 * 60;
+            const ordersResponse = await fetch(
+              base + "/api/orders?min_created=" + minCreated + "&max_created=" + maxCreated + "&limit=100",
+              { headers, redirect: "manual" }
+            );
+            if (!ordersResponse.ok) throw new Error("Read-only Etsy orders check failed.");
+            const orders = await ordersResponse.json();
+            if (!Array.isArray(orders.results) || orders.window?.minCreated !== minCreated || orders.window?.maxCreated !== maxCreated) {
+              throw new Error("Orders response window or shape is invalid.");
+            }
+            console.log("Read-only orders endpoint: healthy; receipts in window:", orders.count);
+          }
           NODE
