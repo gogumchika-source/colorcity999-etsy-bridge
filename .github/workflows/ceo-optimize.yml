@@ -56,7 +56,7 @@ jobs:
           const listings = await listingsResponse.json();
           if (!Array.isArray(listings.results)) throw new Error("Listings response has an invalid shape.");
 
-          const scopes = typeof status.scope === "string" ? status.scope.split(/\\s+/) : [];
+          const scopes = typeof status.scope === "string" ? status.scope.trim().split(" ") : [];
           console.log("Bridge, Etsy connection, shop read, and active listing read: healthy.");
           console.log("Active listing records returned:", listings.results.length);
           console.log("Order-read permission:", scopes.includes("transactions_r") ? "available" : "not yet granted");
