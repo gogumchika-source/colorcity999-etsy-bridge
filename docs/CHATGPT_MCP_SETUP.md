@@ -1,6 +1,6 @@
 # ChatGPT MCP bridge setup
 
-This change adds a remote MCP endpoint for ChatGPT and a draft-first digital listing workflow. Before using it, configure an OAuth identity provider and grant the Etsy app listing-write permission.
+This change adds a remote MCP endpoint for ChatGPT and a draft-first digital listing workflow. Before it can work, configure an OAuth identity provider and grant the Etsy app listing-write permission.
 
 ## What the bridge exposes
 
@@ -8,92 +8,100 @@ Remote MCP endpoint:
 
 `https://colorcity999-etsy-bridge.gogumchika.workers.dev/mcp`
 
-Protected resource metadata:
+Protected-resource metadata:
 
 `https://colorcity999-etsy-bridge.gogumchika.workers.dev/.well-known/oauth-protected-resource`
 
-Tools:
+Available tools:
 
 - Read shop connection, listings, listing details, and PII-redacted orders.
-- Search Etsy seller taxonomy and return usable category IDs.
+- Search Etsy seller taxonomy and return category IDs.
 - Create digital listings as drafts.
-- Create a short-lived upload code, then stage preview images and PDF/ZIP files from the browser.
+- Create a short-lived upload code, then stage preview images and PDF/ZIP files through a browser upload page.
 - Attach staged assets to drafts created by this bridge.
-- Publish a draft only through a separate tool call after Etsy confirms it has at least one preview image and one downloadable file. Publishing requires the exact confirmation string `PUBLISH <listing_id>`.
+- Publish a draft through a separate tool call after Etsy confirms it has a preview image and downloadable file. The call requires the exact phrase `PUBLISH <listing_id>`.
 
-The bridge does not delete or deactivate listings. Seller Stats (visits, views, favorites, traffic sources) are not included because this project does not have a verified Etsy API endpoint for those analytics.
+The bridge does not delete or deactivate listings. Etsy Seller Stats (visits, views, favorites, traffic sources) are not exposed because this bridge has no verified Etsy API route for those analytics.
 
-## Required owner setup
+## Owner setup
 
-Do not put secrets in GitHub, this document, or chat messages.
+Never put secrets or tokens in GitHub, this document, or chat messages.
 
-### 1. Configure OAuth for the ChatGPT MCP connection
+### 1. Configure an OAuth/OIDC provider
 
-Use an existing OAuth/OIDC provider or create a private Auth0 tenant. Configure it to:
+Use an OAuth/OIDC provider that issues RS256-signed JWT access tokens and refresh tokens. Auth0 is one option.
 
-- issue signed JWT access tokens using RS256;
-- use a custom API audience, for example `https://colorcity999-etsy-bridge/api`;
-- issue scopes `etsy:read`, `etsy:write`, and `etsy:publish`;
-- issue refresh tokens for `offline_access`;
-- allow only the ColorCity999 owner to sign in and receive the bridge permissions.
+For Auth0:
 
-For Auth0, configure these Cloudflare Worker secrets:
+1. Create an Auth0 API with identifier exactly:
+   `https://colorcity999-etsy-bridge.gogumchika.workers.dev/mcp`
+   This must match the bridge's advertised `resource` URL and the JWT access token's `aud` claim.
+2. Enable the API permissions `etsy:read`, `etsy:write`, and `etsy:publish`.
+3. Enable Auth0's **Resource Parameter Compatibility Profile** under Tenant Settings > Advanced. ChatGPT sends the MCP resource indicator; Auth0 must map that `resource` value to the API audience. Without this option, Auth0 may issue an opaque or wrong-audience token and the bridge will reject it.
+4. Enable refresh-token / offline access for the ChatGPT OAuth application. Check that the issuer's discovery document advertises `offline_access`.
+5. Restrict sign-in to the ColorCity999 owner account. Grant `etsy:read` for reading, `etsy:write` for drafts and file uploads, and `etsy:publish` only for an owner-authorized publish action.
+6. In the Auth0 application, allow the exact callback URL ChatGPT displays when you configure the connection. Do not guess or reuse the Etsy callback; the ChatGPT OAuth callback is different.
 
-- `MCP_AUTH_ISSUER`: the Auth0 tenant issuer, including its trailing slash;
-- `MCP_AUTH_AUDIENCE`: the custom API audience.
+Configure these Cloudflare Worker secrets:
 
-The issuer and audience are optional for deployment but required when the MCP endpoint verifies tokens. Optionally set `MCP_ALLOWED_SUBJECT` to the exact owner subject identifier for an additional access check. Never send a token or client secret in chat.
+- `MCP_AUTH_ISSUER`: the Auth0 issuer URL, including its trailing slash.
+- `MCP_AUTH_AUDIENCE`: `https://colorcity999-etsy-bridge.gogumchika.workers.dev/mcp`
+- Optional `MCP_ALLOWED_SUBJECT`: the exact owner subject identifier for an additional account restriction.
 
-When adding the custom MCP server in ChatGPT, configure OAuth with the provider's authorization and token endpoints, client credentials, and scopes. Add the exact redirect URI shown by ChatGPT to the provider's allowed callback URLs. Request `openid offline_access etsy:read etsy:write etsy:publish`. Confirm the provider issues refresh tokens and advertises offline access in discovery metadata.
+The issuer and audience are optional for deploying the code but required for authenticated MCP requests. Never send the Auth0 client secret or a token in chat.
+
+When configuring the ChatGPT app, choose OAuth and request `openid offline_access etsy:read etsy:write etsy:publish`. Confirm the provider issues a refresh token so the connection can remain active.
 
 ### 2. Grant Etsy listing-write access
 
-In the Etsy developer app, keep this callback registered:
+Keep this exact callback registered in the Etsy developer app:
 
 `https://colorcity999-etsy-bridge.gogumchika.workers.dev/oauth/callback`
 
-The bridge requests only:
+The bridge requests `listings_r listings_w shops_r transactions_r`. After deploying this change, the Etsy shop owner must visit:
 
-`listings_r listings_w shops_r transactions_r`
+`https://colorcity999-etsy-bridge.gogumchika.workers.dev/oauth/start`
 
-After deploying the updated scope, the Etsy shop owner must visit `/oauth/start` and approve the new listing permission. Existing tokens do not gain scopes automatically.
+Then approve the new Etsy listing permission. Existing Etsy tokens do not gain `listings_w` automatically.
 
-### 3. Configure Cloudflare
+### 3. Configure Cloudflare and deploy
 
-Keep the existing Etsy and bridge secrets. Add `MCP_AUTH_ISSUER` and `MCP_AUTH_AUDIENCE` as Worker secrets. No additional storage resource is required; temporary listing assets use the existing `ETSY_KV` binding.
+Keep the existing Etsy and bridge secrets. Add `MCP_AUTH_ISSUER` and `MCP_AUTH_AUDIENCE` as Worker secrets. Temporary upload files use the existing `ETSY_KV` binding; no additional storage resource is required.
 
-Temporary files are stored as binary Workers KV values, limited to 10,000,000 bytes per preview image and 20,000,000 bytes per PDF/ZIP. The binary and metadata keys expire after 24 hours, and successful Etsy uploads delete them immediately. Workers KV supports binary values up to 25 MiB, so these per-file limits fit within the service limit.
+Files are limited to 10,000,000 bytes per preview image and 20,000,000 bytes per PDF/ZIP. Staged files expire after 24 hours and are deleted after successful Etsy upload. Workers KV is eventually consistent; if an upload does not appear immediately, wait up to a minute and check again.
 
-The repository deploy workflow deploys production when `main` changes. Review and merge only after CI passes and Cloudflare OAuth secrets are configured. Do not use a feature-branch build as a production deployment.
+The production deploy workflow runs when `main` changes. Merge after CI passes and the two OAuth secrets are configured. A feature-branch preview is not a production deployment.
 
-## Add the app to ChatGPT
+### 4. Add the app in ChatGPT
 
-On ChatGPT web, Business workspaces require an admin or owner to create and publish custom MCP apps. Enterprise/Edu access depends on workspace RBAC.
+Custom MCP connections and write actions are available on ChatGPT Business, Enterprise, and Edu web workspaces. On Business, only workspace admins/owners can create and publish these custom apps. Enterprise/Edu admins control member permissions through RBAC.
 
-1. Open Plugins / Apps and add a custom MCP server.
-2. Use the endpoint above and configure OAuth with the approved provider.
-3. Scan the tools and review every read/write action.
-4. Create and install the draft app. Publish it to the workspace only after the listing write actions are reviewed.
-5. Ask the bridge to check the Etsy connection before creating a draft.
+1. Open the workspace's Plugins/Apps settings and add a custom MCP server.
+2. Set the MCP endpoint to `https://colorcity999-etsy-bridge.gogumchika.workers.dev/mcp`.
+3. Choose OAuth; enter the approved provider endpoints and client credentials. Add the exact ChatGPT callback from that screen to the provider's allowed callback URLs.
+4. Scan the tools, review read/write/publish actions, then create the app. Publish it to the workspace only after the permissions are approved.
+5. Connect the app in a chat and run `etsy_connection_status` before creating a draft.
 
-ChatGPT may display a confirmation prompt for write actions. The publish tool also requires an explicit confirmation phrase; do not call it for a draft unless the owner asked to publish that listing.
+ChatGPT can ask for confirmation before write actions. The bridge's publish action also requires a separate publish tool call with `PUBLISH <listing_id>`.
 
-## Uploading a listing's product files
+## Create and upload a listing
 
 1. Ask ChatGPT to create an asset upload session.
-2. Open the returned upload page, paste its short-lived code, choose preview image or digital file, and upload each asset.
-3. Ask ChatGPT to list staged assets, create a digital draft, and attach the selected preview images and PDF/ZIP.
-4. Review the draft in Etsy. To publish, explicitly ask ChatGPT and confirm `PUBLISH <listing_id>`.
+2. Open the returned upload page, enter its one-time code, and upload preview images and the final PDF/ZIP.
+3. Ask ChatGPT to list the staged assets, create the digital draft, and attach the chosen images and download file.
+4. Review the draft in Etsy. To publish, explicitly request publication and confirm the listing ID.
 
-Upload codes expire after 30 minutes. Unused staged files expire after 24 hours in KV. Each file is checked for type and size before staging. KV updates are eventually consistent, so if a newly uploaded file does not appear in the list tool yet, wait up to a minute and check again.
+Upload codes expire after 30 minutes. Unused staged files expire after 24 hours. The bridge validates file extension, declared type, and basic file signature before staging.
 
 ## Verification checklist
 
 - [ ] PR CI passes.
-- [ ] OAuth issuer, audience, scopes, and owner access policy are set.
+- [ ] Auth0 API audience is the exact MCP resource URL and Resource Parameter Compatibility Profile is enabled.
+- [ ] The owner is the only authorized account and has the intended bridge scopes.
+- [ ] Worker issuer/audience secrets are configured.
 - [ ] Etsy authorization has `listings_w`.
-- [ ] Worker is deployed with the existing KV binding and required secrets.
-- [ ] ChatGPT OAuth scan discovers the MCP tools and remains connected after token expiry.
-- [ ] Read actions return real ColorCity999 data.
-- [ ] Draft creation, staging, Etsy file/image upload, and publish are tested on a low-risk listing.
-- [ ] The production app exposes only the reviewed actions.
+- [ ] Worker is deployed with the existing KV binding and required Etsy secrets.
+- [ ] ChatGPT discovers the tools and stays connected after access-token expiry.
+- [ ] Read actions return ColorCity999 data.
+- [ ] Draft creation, file/image upload, and publication are verified in Etsy.
+- [ ] Workspace admins publish only the reviewed actions.
