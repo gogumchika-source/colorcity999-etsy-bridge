@@ -1,8 +1,11 @@
 import { getAuthorizationUrl, handleOAuthCallback, requireBridgeAuth } from "./src/auth.js";
 import { getConnectionStatus, getShop, getListings, getListing, getOrders } from "./src/api.js";
+import { authorizeMcpRequest, protectedResourceMetadata } from "./src/oidc.js";
+import { handleMcp, getMcpMethodNotAllowed } from "./src/mcp.js";
+import { handleAssetUpload, renderAssetUploadPage } from "./src/assets.js";
 
 const REDIRECT_URI = "https://colorcity999-etsy-bridge.gogumchika.workers.dev/oauth/callback";
-const SCOPES = "listings_r shops_r transactions_r";
+const SCOPES = "listings_r listings_w shops_r transactions_r";
 
 export default {
   async fetch(request, env) {
@@ -11,6 +14,22 @@ export default {
 
       if (url.pathname === "/") {
         return json({ service: "ColorCity999 Etsy Bridge", status: "online" });
+      }
+
+      if (url.pathname === "/.well-known/oauth-protected-resource") {
+        if (request.method !== "GET") return json({ error: "Method not allowed" }, 405);
+        return json(protectedResourceMetadata(request, env));
+      }
+
+      if (url.pathname === "/mcp") {
+        if (request.method !== "POST") return getMcpMethodNotAllowed();
+        return handleMcp(request, env);
+      }
+
+      if (url.pathname === "/assets/upload") {
+        if (request.method === "GET") return renderAssetUploadPage();
+        if (request.method === "POST") return await handleAssetUpload(request, env);
+        return json({ error: "Method not allowed" }, 405);
       }
 
       if (url.pathname === "/oauth/start") {
@@ -68,11 +87,7 @@ export default {
         requireBridgeAuth(request, env);
         const allowRefresh = request.headers.get("X-Bridge-No-Refresh") !== "true";
         const listingId = listingMatch[1];
-
-        if (request.method === "GET") {
-          return json(await getListing(env, listingId, { allowRefresh }));
-        }
-
+        if (request.method === "GET") return json(await getListing(env, listingId, { allowRefresh }));
         return json({ error: "Method not allowed" }, 405);
       }
 
@@ -83,15 +98,19 @@ export default {
   },
 };
 
+export async function authorizeMcp(request, env, requiredScope) {
+  return authorizeMcpRequest(request, env, requiredScope);
+}
+
 function json(data, status = 200) {
-  return Response.json(data, {
-    status,
-    headers: { "Cache-Control": "no-store" },
-  });
+  return Response.json(data, { status, headers: { "Cache-Control": "no-store" } });
 }
 
 function toErrorResponse(error) {
   const status = error?.status ?? 500;
   const safeMessage = status >= 500 ? "Internal server error." : error?.message || "Request failed.";
-  return json({ error: safeMessage }, status);
+  return Response.json({ error: safeMessage }, {
+    status,
+    headers: { "Cache-Control": "no-store", ...(error?.headers || {}) },
+  });
 }
