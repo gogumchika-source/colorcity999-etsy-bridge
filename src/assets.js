@@ -1,5 +1,6 @@
 const UPLOAD_PREFIX = "mcp:asset-upload:";
 const ASSET_PREFIX = "mcp:staged-asset:";
+const ASSET_DATA_PREFIX = "mcp:staged-file:";
 const SESSION_TTL_SECONDS = 1800;
 const ASSET_TTL_SECONDS = 86400;
 const MAX_IMAGE_BYTES = 10000000;
@@ -86,15 +87,14 @@ export async function handleAssetUpload(request, env) {
   validateAsset(name, contentType, bytes, purpose);
 
   const assetId = randomHex(16);
-  const objectKey = "staging/" + assetId;
-  await env.ETSY_ASSETS.put(objectKey, bytes, { httpMetadata: { contentType, cacheControl: "private, no-store" } });
+  await env.ETSY_KV.put(ASSET_DATA_PREFIX + assetId, bytes, { expirationTtl: ASSET_TTL_SECONDS });
 
   const nextSession = {
     ...session,
     ...(purpose === "image" ? { imagesRemaining: session.imagesRemaining - 1 } : { digitalFilesRemaining: session.digitalFilesRemaining - 1 }),
   };
   await env.ETSY_KV.put(sessionKey, JSON.stringify(nextSession), { expirationTtl: Math.max(60, Math.ceil((session.expiresAt - Date.now()) / 1000)) });
-  const metadata = { assetId, purpose, name, contentType, bytes: bytes.byteLength, objectKey, expiresAt: Date.now() + ASSET_TTL_SECONDS * 1000 };
+  const metadata = { assetId, purpose, name, contentType, bytes: bytes.byteLength, expiresAt: Date.now() + ASSET_TTL_SECONDS * 1000 };
   await env.ETSY_KV.put(ASSET_PREFIX + assetId, JSON.stringify(metadata), { expirationTtl: ASSET_TTL_SECONDS });
 
   return Response.json(
@@ -135,14 +135,16 @@ export async function getStagedAsset(env, assetId, purpose) {
     throw httpError(404, "Staged asset was not found or has expired.");
   }
   if (metadata.purpose !== purpose) throw httpError(400, "Staged asset has the wrong file type.");
-  const object = await env.ETSY_ASSETS.get(metadata.objectKey);
-  if (!object) throw httpError(404, "Staged file storage is unavailable.");
-  return { metadata, object };
+  const bytes = await env.ETSY_KV.get(ASSET_DATA_PREFIX + assetId, { type: "arrayBuffer" });
+  if (!bytes) throw httpError(404, "Staged file storage is unavailable.");
+  return { metadata, bytes: new Uint8Array(bytes) };
 }
 
 export async function deleteStagedAsset(env, metadata) {
-  if (metadata?.objectKey && env.ETSY_ASSETS) await env.ETSY_ASSETS.delete(metadata.objectKey);
-  if (metadata?.assetId) await env.ETSY_KV.delete(ASSET_PREFIX + metadata.assetId);
+  if (metadata?.assetId) {
+    await env.ETSY_KV.delete(ASSET_DATA_PREFIX + metadata.assetId);
+    await env.ETSY_KV.delete(ASSET_PREFIX + metadata.assetId);
+  }
 }
 
 async function readLimitedBody(request, maxBytes) {
@@ -206,7 +208,7 @@ function safeFileName(value) {
 }
 
 function requireAssetStorage(env) {
-  if (!env.ETSY_ASSETS || !env.ETSY_KV) throw httpError(503, "Temporary file staging is not configured.");
+  if (!env.ETSY_KV) throw httpError(503, "Temporary file staging is not configured.");
 }
 
 function randomHex(byteLength) {
