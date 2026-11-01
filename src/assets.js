@@ -2,8 +2,8 @@ const UPLOAD_PREFIX = "mcp:asset-upload:";
 const ASSET_PREFIX = "mcp:staged-asset:";
 const SESSION_TTL_SECONDS = 1800;
 const ASSET_TTL_SECONDS = 86400;
-const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
-const MAX_DIGITAL_BYTES = 20 * 1024 * 1024;
+const MAX_IMAGE_BYTES = 10000000;
+const MAX_DIGITAL_BYTES = 20000000;
 
 export async function createAssetUploadSession(env, origin) {
   requireAssetStorage(env);
