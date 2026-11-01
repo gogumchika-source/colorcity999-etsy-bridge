@@ -83,11 +83,7 @@ Register this exact OAuth callback in the Etsy developer application:
 
 `https://colorcity999-etsy-bridge.gogumchika.workers.dev/oauth/callback`
 
-The bridge requests read-only access:
-
-`listings_r shops_r transactions_r`
-
-After this scope change, the Etsy owner must authorize the bridge again. The bridge no longer exposes a listing-write endpoint.
+The bridge requests `listings_r listings_w shops_r transactions_r`. The Etsy shop owner must authorize the bridge again after deployment because existing tokens do not gain the new `listings_w` permission automatically.
 
 ## Deploy
 
@@ -194,3 +190,10 @@ Workers KV is eventually consistent. This handles the expected single-shop, low-
 ## Security warning
 
 This repository is public. That is compatible with the architecture only because real credentials are stored as Cloudflare secrets and OAuth tokens are stored in Cloudflare KV. If a credential is ever committed, rotate it immediately.
+
+
+## ChatGPT MCP and digital listing workflow
+
+The bridge exposes a remote MCP server at `/mcp`, protected by an OAuth/OIDC provider with JWT access tokens. It can search Etsy seller taxonomy, read shop/listing/order data, create digital drafts, stage local preview images and PDF/ZIP files through a short-lived code, attach staged assets, and publish a draft in a separate confirmed action. It never deletes or deactivates listings.
+
+MCP setup, required Cloudflare resources, OAuth configuration, and the ChatGPT workspace steps are documented in [docs/CHATGPT_MCP_SETUP.md](docs/CHATGPT_MCP_SETUP.md). The MCP endpoint uses an OAuth identity provider; the legacy `BRIDGE_API_SECRET` continues to protect only the `/api/*` HTTP endpoints. A Cloudflare R2 bucket named `colorcity999-etsy-staging-assets` is required for temporary local-file staging.
