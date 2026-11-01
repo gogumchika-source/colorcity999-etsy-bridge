@@ -201,7 +201,7 @@ export async function uploadListingAsset(env, listingId, assetId, purpose, { all
   assertDraftListing(listing, id, shop.shop_id);
 
   if (purpose !== "image" && purpose !== "digital_file") throw httpError(400, "purpose must be image or digital_file.");
-  const { metadata, object } = await getStagedAsset(env, assetId, purpose);
+  const { metadata, bytes } = await getStagedAsset(env, assetId, purpose);
   const assetsPath = purpose === "image"
     ? "/listings/" + id + "/images"
     : "/shops/" + encodeURIComponent(shop.shop_id) + "/listings/" + id + "/files";
@@ -209,7 +209,7 @@ export async function uploadListingAsset(env, listingId, assetId, purpose, { all
   const maxAssets = purpose === "image" ? 20 : 5;
   if (existingAssets.length >= maxAssets) throw httpError(409, "This draft already has the maximum number of Etsy assets.");
   const rank = existingAssets.length + 1;
-  const blob = new Blob([await object.arrayBuffer()], { type: metadata.contentType });
+  const blob = new Blob([bytes], { type: metadata.contentType });
   const form = new FormData();
   if (purpose === "image") {
     form.append("image", blob, metadata.name);
