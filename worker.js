@@ -1,6 +1,6 @@
 import { getAuthorizationUrl, handleOAuthCallback, requireBridgeAuth } from "./src/auth.js";
 import { getConnectionStatus, getShop, getListings, getListing, getOrders } from "./src/api.js";
-import { authorizeMcpRequest, protectedResourceMetadata } from "./src/oidc.js";
+import { protectedResourceMetadata } from "./src/oidc.js";
 import { handleMcp, getMcpMethodNotAllowed } from "./src/mcp.js";
 import { handleAssetUpload, renderAssetUploadPage } from "./src/assets.js";
 
@@ -98,9 +98,6 @@ export default {
   },
 };
 
-export async function authorizeMcp(request, env, requiredScope) {
-  return authorizeMcpRequest(request, env, requiredScope);
-}
 
 function json(data, status = 200) {
   return Response.json(data, { status, headers: { "Cache-Control": "no-store" } });
