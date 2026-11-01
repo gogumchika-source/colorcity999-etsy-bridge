@@ -53,7 +53,9 @@ Set both as Cloudflare Worker secrets. Optionally set \`MCP_ALLOWED_SUBJECT\` to
 
 When adding the custom MCP server in ChatGPT, configure OAuth with that provider's authorization and token endpoints, client credentials, and scopes. Add the exact redirect URI shown by ChatGPT to the provider's allowed callback URLs. Request \`openid offline_access etsy:read etsy:write etsy:publish\`. Confirm that discovery metadata advertises refresh/offline access.
 
-### 3. Grant Etsy listing-write access
+Temporary files are stored as binary Workers KV values, limited to 10 MB per preview image and 20 MB per PDF/ZIP. Both the binary and metadata keys expire after 24 hours, and successful Etsy uploads delete them immediately. Cloudflare KV supports binary values up to 25 MiB, so the configured limits fit within that service limit.
+
+### 2. Grant Etsy listing-write access
 
 In the Etsy developer app, keep this callback registered:
 
@@ -95,7 +97,6 @@ Upload codes expire after 30 minutes. Unused staged files expire after 24 hours 
 ## Verification checklist
 
 - [ ] PR CI passes.
-- [ ] R2 bucket and one-day lifecycle cleanup exist.
 - [ ] Auth0/OIDC issuer, audience, scopes, and owner access policy are set.
 - [ ] Etsy authorization has \`listings_w\`.
 - [ ] Worker is deployed with secrets and bindings.
