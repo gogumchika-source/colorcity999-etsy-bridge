@@ -5,11 +5,7 @@ const EXPIRY_SAFETY_SECONDS = 60;
 export async function getValidAccessToken(env, { allowRefresh = true } = {}) {
   const record = await readTokenRecord(env);
   if (!record?.accessToken || !record?.refreshToken) throw httpError(503, "Etsy is not connected.");
-
-  if (record.expiresAt > Date.now() + EXPIRY_SAFETY_SECONDS * 1000) {
-    return record.accessToken;
-  }
-
+  if (record.expiresAt > Date.now() + EXPIRY_SAFETY_SECONDS * 1000) return record.accessToken;
   if (!allowRefresh) throw httpError(503, "Etsy token refresh is disabled for this request.");
   return refreshAccessToken(env, record);
 }
@@ -18,18 +14,13 @@ export async function etsyRequest(env, path, options = {}) {
   const allowRefresh = options.allowRefresh !== false;
   let accessToken = await getValidAccessToken(env, { allowRefresh });
   let response = await rawEtsyRequest(env, path, accessToken, options);
-
   if (response.status !== 401) return response;
   if (!allowRefresh) throw httpError(502, "Etsy authorization was rejected; refresh is disabled for this request.");
 
   const latest = await readTokenRecord(env);
   if (!latest?.refreshToken) throw httpError(503, "Etsy is not connected.");
-
-  if (latest.accessToken && latest.accessToken !== accessToken) {
-    accessToken = latest.accessToken;
-  } else {
-    accessToken = await refreshAccessToken(env, latest, true);
-  }
+  if (latest.accessToken && latest.accessToken !== accessToken) accessToken = latest.accessToken;
+  else accessToken = await refreshAccessToken(env, latest, true);
 
   response = await rawEtsyRequest(env, path, accessToken, options);
   if (response.status === 401) {
@@ -40,20 +31,23 @@ export async function etsyRequest(env, path, options = {}) {
 }
 
 async function rawEtsyRequest(env, path, accessToken, options) {
-  const bodyIsForm = typeof URLSearchParams !== "undefined" && options.body instanceof URLSearchParams;
+  const bodyIsForm = typeof FormData !== "undefined" && options.body instanceof FormData;
+  const bodyIsSearchParams = typeof URLSearchParams !== "undefined" && options.body instanceof URLSearchParams;
+  const bodyIsUrlEncoded = bodyIsSearchParams;
+  const headers = {
+    "x-api-key": getEtsyKeystring(env) + ":" + env.ETSY_SHARED_SECRET,
+    Authorization: "Bearer " + accessToken,
+    Accept: "application/json",
+    ...(!bodyIsForm && options.body && !options.headers?.["Content-Type"]
+      ? { "Content-Type": bodyIsUrlEncoded ? "application/x-www-form-urlencoded; charset=utf-8" : "application/json" }
+      : {}),
+    ...(options.headers || {}),
+  };
   return fetch("https://api.etsy.com/v3/application" + path, {
     method: options.method || "GET",
-    headers: {
-      "x-api-key": getEtsyKeystring(env) + ":" + env.ETSY_SHARED_SECRET,
-      Authorization: "Bearer " + accessToken,
-      Accept: "application/json",
-      ...(options.body && !options.headers?.["Content-Type"]
-        ? { "Content-Type": bodyIsForm ? "application/x-www-form-urlencoded; charset=utf-8" : "application/json" }
-        : {}),
-      ...(options.headers || {}),
-    },
+    headers,
     body: options.body
-      ? typeof options.body === "string" || bodyIsForm
+      ? typeof options.body === "string" || bodyIsUrlEncoded || bodyIsForm
         ? options.body
         : JSON.stringify(options.body)
       : undefined,
@@ -63,46 +57,33 @@ async function rawEtsyRequest(env, path, accessToken, options) {
 async function refreshAccessToken(env, record, force = false) {
   const latest = await readTokenRecord(env);
   const latestTokenIsValid = latest?.accessToken && latest.expiresAt > Date.now() + EXPIRY_SAFETY_SECONDS * 1000;
-  if (latestTokenIsValid && latest.accessToken !== record.accessToken) {
-    return latest.accessToken;
-  }
-  if (!force && latestTokenIsValid) {
-    return latest.accessToken;
-  }
+  if (latestTokenIsValid && latest.accessToken !== record.accessToken) return latest.accessToken;
+  if (!force && latestTokenIsValid) return latest.accessToken;
 
   const body = new URLSearchParams({
     grant_type: "refresh_token",
     client_id: getEtsyKeystring(env),
     refresh_token: latest?.refreshToken || record.refreshToken,
   });
-
   const response = await fetch(ETSY_TOKEN_URL, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      Accept: "application/json",
-    },
+    headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
     body,
   });
-
   if (!response.ok) {
     console.error("Etsy refresh-token request failed.", { status: response.status });
     throw httpError(502, "Etsy authorization could not be refreshed.");
   }
 
   let token;
-  try {
-    token = await response.json();
-  } catch {
+  try { token = await response.json(); } catch {
     console.error("Etsy refresh-token response was not valid JSON.");
     throw httpError(502, "Etsy returned an invalid refresh response.");
   }
-
   if (!token.access_token || !token.refresh_token || !token.expires_in) {
     console.error("Etsy refresh-token response was incomplete.");
     throw httpError(502, "Etsy returned incomplete refresh credentials.");
   }
-
   const updated = {
     ...latest,
     accessToken: token.access_token,
@@ -112,7 +93,6 @@ async function refreshAccessToken(env, record, force = false) {
     scope: token.scope || latest?.scope || "",
     updatedAt: Date.now(),
   };
-
   await env.ETSY_KV.put(TOKEN_KEY, JSON.stringify(updated));
   return updated.accessToken;
 }
