@@ -68,6 +68,27 @@ export async function getListings(env, { allowRefresh = true, state = "active", 
   ));
 }
 
+export async function searchSellerTaxonomy(env, query, { allowRefresh = true } = {}) {
+  if (typeof query !== "string" || query.trim().length < 2) throw httpError(400, "query must contain at least two characters.");
+  const normalizedQuery = query.trim().toLowerCase();
+  const payload = await fetchJson(await etsyRequest(env, "/seller-taxonomy/nodes", { allowRefresh }));
+  const results = [];
+  function visit(nodes, parents) {
+    for (const node of Array.isArray(nodes) ? nodes : []) {
+      const name = typeof node.name === "string" ? node.name : "";
+      const path = parents.concat(name).filter(Boolean);
+      const children = Array.isArray(node.children) ? node.children : [];
+      if (!children.length && path.join(" ").toLowerCase().includes(normalizedQuery)) {
+        results.push({ taxonomyId: node.id, name, path: path.join(" > ") });
+      }
+      visit(children, path);
+      if (results.length >= 30) return;
+    }
+  }
+  visit(payload.results, []);
+  return { query: query.trim(), results: results.slice(0, 30) };
+}
+
 export async function getOrders(env, {
   allowRefresh = true,
   minCreated,
