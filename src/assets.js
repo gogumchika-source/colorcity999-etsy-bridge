@@ -43,7 +43,7 @@ button.addEventListener("click",async()=>{
   statusBox.textContent+="Uploading "+file.name+"…\\n";
   const response=await fetch("/assets/upload",{method:"POST",headers:{"Authorization":"Bearer "+code,"Content-Type":file.type||"application/octet-stream","X-Asset-Purpose":kind,"X-Asset-Name":encodeURIComponent(file.name)},body:file});
   const result=await response.json();if(!response.ok)throw new Error(result.error||"Upload failed.");
-  statusBox.textContent+="Staged "+file.name+" as "+result.assetId+"\\n";
+  statusBox.textContent+="Staged "+file.name+" as "+result.assetId+"\\n";await new Promise(resolve=>setTimeout(resolve,1100));
  }}catch(error){statusBox.textContent+="Stopped: "+error.message;}finally{button.disabled=false;}
 });
 </script></body></html>`;
