@@ -9,19 +9,11 @@
       "id": "8c55fa296e6b49d682697f9275d7c813"
     }
   ],
-  "r2_buckets": [
-    {
-      "binding": "ETSY_ASSETS",
-      "bucket_name": "colorcity999-etsy-staging-assets"
-    }
-  ],
   "secrets": {
     "required": [
       "ETSY_KEYSTRING",
       "ETSY_SHARED_SECRET",
-      "BRIDGE_API_SECRET",
-      "MCP_AUTH_ISSUER",
-      "MCP_AUTH_AUDIENCE"
+      "BRIDGE_API_SECRET"
     ]
   },
   "observability": {
