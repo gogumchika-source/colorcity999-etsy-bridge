@@ -4,6 +4,7 @@ import {
   getListings,
   getListing,
   getOrders,
+  searchSellerTaxonomy,
   createDigitalDraft,
   uploadListingAsset,
   publishDigitalListing,
@@ -65,6 +66,9 @@ async function callTool(params, env, origin) {
       case "get_etsy_listing":
         data = await getListing(env, args.listing_id);
         break;
+      case "search_etsy_taxonomy":
+        data = await searchSellerTaxonomy(env, args.query);
+        break;
       case "get_etsy_orders":
         data = await getOrders(env, {
           minCreated: args.min_created,
@@ -117,7 +121,7 @@ async function callTool(params, env, origin) {
 function requiredToolScope(name) {
   if (name === "publish_digital_listing") return "etsy:publish";
   if (["create_digital_draft", "create_asset_upload_session", "upload_listing_asset"].includes(name)) return "etsy:write";
-  if (["etsy_connection_status", "list_etsy_listings", "get_etsy_listing", "get_etsy_orders", "list_staged_assets"].includes(name)) return "etsy:read";
+  if (["etsy_connection_status", "list_etsy_listings", "get_etsy_listing", "search_etsy_taxonomy", "get_etsy_orders", "list_staged_assets"].includes(name)) return "etsy:read";
   return "etsy:read";
 }
 
@@ -145,6 +149,16 @@ function toolDefinitions() {
       name: "get_etsy_listing",
       description: "Read a single Etsy listing by ID.",
       inputSchema: { type: "object", properties: { listing_id: { type: "integer", minimum: 1 } }, required: ["listing_id"], additionalProperties: false },
+    },
+    {
+      name: "search_etsy_taxonomy",
+      description: "Search Etsy seller categories and return valid taxonomy IDs and full category paths for a listing.",
+      inputSchema: {
+        type: "object",
+        properties: { query: { type: "string", minLength: 2 } },
+        required: ["query"],
+        additionalProperties: false,
+      },
     },
     {
       name: "get_etsy_orders",
