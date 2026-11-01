@@ -202,16 +202,23 @@ export async function uploadListingAsset(env, listingId, assetId, purpose, { all
 
   if (purpose !== "image" && purpose !== "digital_file") throw httpError(400, "purpose must be image or digital_file.");
   const { metadata, object } = await getStagedAsset(env, assetId, purpose);
+  const assetsPath = purpose === "image"
+    ? "/listings/" + id + "/images"
+    : "/shops/" + encodeURIComponent(shop.shop_id) + "/listings/" + id + "/files";
+  const existingAssets = extractResults(await fetchJson(await etsyRequest(env, assetsPath, { allowRefresh })));
+  const maxAssets = purpose === "image" ? 20 : 5;
+  if (existingAssets.length >= maxAssets) throw httpError(409, "This draft already has the maximum number of Etsy assets.");
+  const rank = existingAssets.length + 1;
   const blob = new Blob([await object.arrayBuffer()], { type: metadata.contentType });
   const form = new FormData();
   if (purpose === "image") {
     form.append("image", blob, metadata.name);
-    form.append("rank", "1");
+    form.append("rank", String(rank));
     form.append("alt_text", typeof altText === "string" ? altText.slice(0, 500) : "");
   } else {
     form.append("file", blob, metadata.name);
     form.append("name", metadata.name);
-    form.append("rank", "1");
+    form.append("rank", String(rank));
   }
   const endpoint = "/shops/" + encodeURIComponent(shop.shop_id) + "/listings/" + id + (purpose === "image" ? "/images" : "/files");
   const response = await etsyRequest(env, endpoint, { method: "POST", body: form, allowRefresh });
