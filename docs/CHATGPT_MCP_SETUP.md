@@ -85,7 +85,7 @@ ChatGPT may display a confirmation prompt for write actions. The publish tool al
 3. Ask ChatGPT to list staged assets, create a digital draft, and attach the selected preview images and PDF/ZIP.
 4. Review the draft in Etsy. To publish, explicitly ask ChatGPT and confirm `PUBLISH <listing_id>`.
 
-Upload codes expire after 30 minutes. Unused staged files expire after 24 hours in KV. Each file is checked for type and size before staging.
+Upload codes expire after 30 minutes. Unused staged files expire after 24 hours in KV. Each file is checked for type and size before staging. KV updates are eventually consistent, so if a newly uploaded file does not appear in the list tool yet, wait up to a minute and check again.
 
 ## Verification checklist
 
