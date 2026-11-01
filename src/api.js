@@ -235,7 +235,7 @@ export async function publishDigitalListing(env, listingId, { allowRefresh = tru
   const listing = await getListing(env, id, { allowRefresh });
   assertDraftListing(listing, id, shop.shop_id);
 
-  const images = await fetchJson(await etsyRequest(env, "/shops/" + encodeURIComponent(shop.shop_id) + "/listings/" + id + "/images", { allowRefresh }));
+  const images = await fetchJson(await etsyRequest(env, "/listings/" + id + "/images", { allowRefresh }));
   const files = await fetchJson(await etsyRequest(env, "/shops/" + encodeURIComponent(shop.shop_id) + "/listings/" + id + "/files", { allowRefresh }));
   if (extractResults(images).length < 1) throw httpError(409, "Add at least one preview image before publishing.");
   if (extractResults(files).length < 1) throw httpError(409, "Add at least one digital download file before publishing.");
