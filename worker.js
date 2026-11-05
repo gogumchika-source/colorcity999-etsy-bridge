@@ -27,7 +27,7 @@ export default {
         return handleMcp(request, env);
       }
 
-      if (url.pathname === "/studio" || url.pathname === "/studio/preview") {
+      if (url.pathname === "/studio" || url.pathname === "/studio/preview" || url.pathname === "/studio/ready") {
         return await handleStudio(request, env);
       }
 
