@@ -89,6 +89,7 @@ img.cover{max-width:100%;max-height:350px;object-fit:contain;border-radius:12px;
 pre{white-space:pre-wrap;font-family:inherit;line-height:1.5}.warning{border-left:4px solid #b87516;padding-left:12px}
 </style></head>
 <body><main><header><h1>ColorCity999 Listing Studio</h1><p>Private preview · Your Etsy shop is never modified by this page.</p></header>
+<section class="panel"><h2>Secure connection readiness</h2><p class="muted" id="readiness">Checking private Studio settings…</p></section>
 <section class="panel"><form id="form">
 <label for="zip">One ZIP containing exactly one PDF and 1–10 cover/preview images</label>
 <input id="zip" type="file" accept=".zip,application/zip" required>
@@ -104,6 +105,11 @@ pre{white-space:pre-wrap;font-family:inherit;line-height:1.5}.warning{border-lef
 <script nonce="${nonce}">
 const form=document.getElementById("form"), go=document.getElementById("go");
 const status=document.getElementById("status"), result=document.getElementById("result");
+fetch("/studio/ready").then(async response=>{
+  if(!response.ok)throw new Error("Private readiness check is unavailable.");
+  const data=await response.json();
+  document.getElementById("readiness").textContent="Owner login verified · AI: "+data.aiBinding+" · Etsy listing-write grant: "+data.etsyListingWriteScope+" · Preview-only mode";
+}).catch(()=>{document.getElementById("readiness").textContent="Private readiness check unavailable. No Etsy changes can be made.";});
 form.addEventListener("submit",async event=>{
   event.preventDefault();
   const file=document.getElementById("zip").files[0];
