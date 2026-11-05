@@ -60,6 +60,8 @@ jobs:
           console.log("Bridge, Etsy connection, shop read, and active listing read: healthy.");
           console.log("Active listing records returned:", listings.results.length);
           console.log("Order-read permission:", scopes.includes("transactions_r") ? "available" : "not yet granted");
+          console.log("Listing-write permission:", typeof status.scope !== "string" ? "not verified" : scopes.includes("listings_w") ? "granted" : "missing");
+          console.log("Note: permission status is informational; health checks do not call Etsy write endpoints.");
 
           if (scopes.includes("transactions_r")) {
             const maxCreated = Math.floor(Date.now() / 1000);

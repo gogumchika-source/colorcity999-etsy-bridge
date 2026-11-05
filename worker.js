@@ -3,6 +3,7 @@ import { getConnectionStatus, getShop, getListings, getListing, getOrders } from
 import { protectedResourceMetadata } from "./src/oidc.js";
 import { handleMcp, getMcpMethodNotAllowed } from "./src/mcp.js";
 import { handleAssetUpload, renderAssetUploadPage } from "./src/assets.js";
+import { handleStudio } from "./src/studio/index.js";
 
 const REDIRECT_URI = "https://colorcity999-etsy-bridge.gogumchika.workers.dev/oauth/callback";
 const SCOPES = "listings_r listings_w shops_r transactions_r";
@@ -24,6 +25,10 @@ export default {
       if (url.pathname === "/mcp") {
         if (request.method !== "POST") return getMcpMethodNotAllowed();
         return handleMcp(request, env);
+      }
+
+      if (url.pathname === "/studio" || url.pathname === "/studio/preview" || url.pathname === "/studio/ready") {
+        return await handleStudio(request, env);
       }
 
       if (url.pathname === "/assets/upload") {
