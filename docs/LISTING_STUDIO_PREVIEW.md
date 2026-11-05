@@ -42,3 +42,35 @@ The tests create an in-memory, minimal original PDF and PNG and a stored ZIP arc
 - Actual SEO relevance and listing category are not yet verified against Etsy taxonomy. Price is defaulted to $9.99.
 - All source material stays in memory for one request and is not retained as a staged upload. A later draft workflow must add guarded temporary storage and idempotent retries.
 - Do not use the legacy /assets/upload route for Studio automatically; it is a separate MCP workflow.
+
+
+## Step 5 — Owner access and Etsy write-grant readiness (November 5, 2026)
+
+ChatGPT Plus workflow uses Cloudflare Access for private Studio login. It does not depend on the separate Auth0/ChatGPT MCP setup.
+
+### Development preview: isolated Worker
+The branch includes wrangler.studio-preview.jsonc with a separate Worker name, Workers AI binding, and STUDIO_ENABLED=preview. This isolated Worker has NO production ETSY_KV binding and NO existing Etsy/bridge secrets. It cannot publish or read production OAuth tokens.
+
+Owner-approved setup steps, NOT performed here:
+1. In Cloudflare, enable Zero Trust, then use a verified account.
+2. Only after explicit deployment approval, deploy the distinct preview Worker using: wrangler deploy --config wrangler.studio-preview.jsonc
+3. Workers & Pages > colorcity999-listing-studio-preview > Access > Protect this Worker behind Access > All traffic.
+4. Allow exactly the verified owner's email in an Access policy; do not permit a whole email domain or all account members.
+5. Obtain the actual Cloudflare Access team domain and Access application audience. Set STUDIO_ACCESS_TEAM_DOMAIN, STUDIO_ACCESS_AUD and STUDIO_ALLOWED_EMAIL securely for the preview Worker. Do not commit real owner details or secrets.
+6. Check denied anonymous access and denied non-owner access. The Worker also verifies the Access JWT signature and audience.
+7. Authenticate as owner, open /studio and /studio/ready, and test a harmless ZIP. The preflight will report Etsy write scope UNVERIFIED because this separate preview Worker intentionally has no production KV.
+
+### Etsy listings_w — existing production Worker
+The development branch updates the existing GitHub bridge-health workflow to log only the boolean listing-write permission (granted, missing or not verified) from the protected /api/status response. It never outputs tokens, full scopes, or owner identity. This Action update will NOT run in production until separately approved and merged. Main pushes also deploy production automatically.
+
+If the protected status proves listings_w is missing, the shop owner must complete Etsy consent themselves at:
+https://colorcity999-etsy-bridge.gogumchika.workers.dev/oauth/start
+
+Do not paste OAuth codes, cookies, access tokens or bridge API secrets. The OAuth callback implementation now reports the permission actually granted, not just requested; that code is also NOT deployed yet.
+
+### Remaining deliberate gates
+- Workers AI can create SEO candidates, but has only been unit-tested using mocked model responses; live inference and costs are not verified.
+- The isolated preview does not create Etsy drafts or upload real files.
+- Publishing requires a future reviewed draft/upload integration, idempotency safeguards and separate approval.
+- When Studio moves into the current production Worker, Access must protect ONLY Studio paths (/studio, /studio/preview, /studio/ready), not the whole Worker. Protecting the whole current Worker could break OAuth callbacks and GitHub health checks.
+- Studio's current ZIP limit is 20 MB; larger files require controlled upload improvements.
