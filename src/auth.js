@@ -134,10 +134,14 @@ export async function handleOAuthCallback(request, env, { redirectUri }) {
     console.error("Etsy shop discovery failed after authorization.", { message: error?.message });
   }
 
-  const completionMessage = shopDiscovered
-    ? "ColorCity999 is authorized with Etsy, and the shop API responded successfully. You can close this page."
-    : "Etsy authorization and token storage succeeded, but shop discovery did not complete. You can close this page; the connection can be checked through the protected API.";
-  return new Response("<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>ColorCity999 — Etsy Connected</title>" + "<style>body{font-family:system-ui;margin:0;background:#f6f3ff;color:#211b2d}main{max-width:680px;margin:40px auto;padding:28px;background:#fff;border-radius:20px;box-shadow:0 8px 30px #0001}.ok{font-size:44px}h1{margin:8px 0 12px}li{margin:10px 0}</style></head>" + "<body><main><div class=\"ok\">🟢</div><h1>ColorCity999 is connected</h1><p><b>" + completionMessage + "</b></p>" + "<h2>CEO mode status</h2><ul><li>🟢 Etsy authorization complete</li><li>🟢 ColorCity999 shop verified</li><li>🟢 Shop/listing read and listing write access requested</li><li>🟡 Next: verify sales and reporting access</li></ul>" + "<p>You can close this page. The Etsy connection has been stored securely.</p><script>history.replaceState(null, document.title, \"/oauth/callback\");</script></main></body></html>", { status: 200, headers: {   "Content-Type": "text/html; charset=utf-8",   "Cache-Control": "no-store",   "Referrer-Policy": "no-referrer",   "Set-Cookie": OAUTH_COOKIE + "=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0", }, } );
+  const grantedScopes = new Set(typeof token.scope === "string" ? token.scope.trim().split(/\s+/) : []);
+  const listingWriteGranted = grantedScopes.has("listings_w");
+  const completionMessage = listingWriteGranted
+    ? "ColorCity999 authorized Etsy listing-write access. You can close this page."
+    : "Etsy connected, but listing-write permission is NOT confirmed. Check the protected health report before making drafts.";
+  const shopStatus = shopDiscovered ? "🟢 Shop API responded" : "🟡 Shop discovery was not completed";
+  const writeStatus = listingWriteGranted ? "🟢 Etsy listings_w grant confirmed" : "🟡 Etsy listings_w grant missing or unverified";
+  return new Response("<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>ColorCity999 — Etsy Connected</title>" + "<style>body{font-family:system-ui;margin:0;background:#f6f3ff;color:#211b2d}main{max-width:680px;margin:40px auto;padding:28px;background:#fff;border-radius:20px;box-shadow:0 8px 30px #0001}.ok{font-size:44px}h1{margin:8px 0 12px}li{margin:10px 0}</style></head>" + "<body><main><div class=\"ok\">🟢</div><h1>ColorCity999 Etsy authorization result</h1><p><b>" + completionMessage + "</b></p>" + "<h2>CEO mode status</h2><ul><li>🟢 Etsy token stored</li><li>" + shopStatus + "</li><li>" + writeStatus + "</li><li>Next: verify status through the protected bridge health check</li></ul>" + "<p>You can close this page. The Etsy connection has been stored securely.</p><script>history.replaceState(null, document.title, \"/oauth/callback\");</script></main></body></html>", { status: 200, headers: {   "Content-Type": "text/html; charset=utf-8",   "Cache-Control": "no-store",   "Referrer-Policy": "no-referrer",   "Set-Cookie": OAUTH_COOKIE + "=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0", }, } );
 }
 
 async function fetchOwnerShop(env, userId, accessToken) {
