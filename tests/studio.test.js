@@ -4,6 +4,8 @@ import { extractListingPackage } from "../src/studio/zip.js";
 import { validateGeneratedListing, generateListingPreview } from "../src/studio/seo.js";
 import { handleStudio } from "../src/studio/index.js";
 import worker from "../worker.js";
+import { requireStudioOwner } from "../src/studio/auth.js";
+import { deflateRawSync } from "node:zlib";
 
 function crc32(buffer) {
   let crc = -1;
@@ -13,26 +15,29 @@ function crc32(buffer) {
   }
   return (crc ^ -1) >>> 0;
 }
-function zip(entries) {
+function zip(entries, useDeflate = false) {
   const chunks = [], central = [];
   let offset = 0;
   for (const [name, dataInput] of entries) {
-    const nameBytes = Buffer.from(name), data = Buffer.from(dataInput);
+    const nameBytes = Buffer.from(name), original = Buffer.from(dataInput);
+    const data = useDeflate ? deflateRawSync(original) : original;
     const local = Buffer.alloc(30);
     local.writeUInt32LE(0x04034b50, 0);
     local.writeUInt16LE(20, 4);
-    local.writeUInt32LE(crc32(data), 14);
+    local.writeUInt16LE(useDeflate ? 8 : 0, 8);
+    local.writeUInt32LE(crc32(original), 14);
     local.writeUInt32LE(data.length, 18);
-    local.writeUInt32LE(data.length, 22);
+    local.writeUInt32LE(original.length, 22);
     local.writeUInt16LE(nameBytes.length, 26);
     chunks.push(local, nameBytes, data);
     const cd = Buffer.alloc(46);
     cd.writeUInt32LE(0x02014b50, 0);
     cd.writeUInt16LE(20, 4);
     cd.writeUInt16LE(20, 6);
-    cd.writeUInt32LE(crc32(data), 16);
+    cd.writeUInt16LE(useDeflate ? 8 : 0, 10);
+    cd.writeUInt32LE(crc32(original), 16);
     cd.writeUInt32LE(data.length, 20);
-    cd.writeUInt32LE(data.length, 24);
+    cd.writeUInt32LE(original.length, 24);
     cd.writeUInt16LE(nameBytes.length, 28);
     cd.writeUInt32LE(offset, 42);
     central.push(cd, nameBytes);
@@ -134,4 +139,38 @@ test("cross-origin upload fails before extraction or AI inference", async () => 
   }), { STUDIO_ENABLED: "preview", AI: { run: async () => { throw new Error("must not run"); } } }, {
     authorize: async () => {}
   }), error => error.status === 403);
+});
+
+test("a normal deflate-compressed ZIP is extracted and verified", async () => {
+  const compressed = zip([["Alphabet.pdf", pdf], ["cover.png", png]], true);
+  const result = await extractListingPackage(compressed);
+  assert.equal(result.pdf.name, "Alphabet.pdf");
+  assert.equal(result.images[0].name, "cover.png");
+});
+test("Cloudflare Access owner JWT verifies signature, owner email and audience", async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; });
+  const pair = await crypto.subtle.generateKey(
+    { name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" },
+    true, ["sign", "verify"]
+  );
+  const jwk = await crypto.subtle.exportKey("jwk", pair.publicKey);
+  globalThis.fetch = async () => Response.json({ keys: [{ ...jwk, kid: "test-key" }] });
+  const env = { STUDIO_ACCESS_TEAM_DOMAIN: "test-team.cloudflareaccess.com", STUDIO_ACCESS_AUD: "studio-audience", STUDIO_ALLOWED_EMAIL: "owner@example.test" };
+  const encode = obj => Buffer.from(JSON.stringify(obj)).toString("base64url");
+  const head = encode({ alg: "RS256", kid: "test-key" });
+  async function token(changes = {}) {
+    const payload = encode({
+      iss: "https://test-team.cloudflareaccess.com", aud: ["studio-audience"], email: "owner@example.test",
+      exp: Math.floor(Date.now() / 1000) + 300, ...changes
+    });
+    const input = head + "." + payload;
+    const signature = await crypto.subtle.sign("RSASSA-PKCS1-v1_5", pair.privateKey, new TextEncoder().encode(input));
+    return input + "." + Buffer.from(signature).toString("base64url");
+  }
+  const request = token => new Request("https://bridge.test/studio", { headers: { "Cf-Access-Jwt-Assertion": token } });
+  assert.deepEqual(await requireStudioOwner(request(await token()), env), { email: "owner@example.test" });
+  await assert.rejects(requireStudioOwner(request(await token({ email: "intruder@example.test" })), env), e => e.status === 403);
+  await assert.rejects(requireStudioOwner(request(await token({ aud: ["different-audience"] })), env), e => e.status === 403);
+  await assert.rejects(requireStudioOwner(request((await token()).slice(0, -2) + "xx"), env), e => e.status === 401);
 });
