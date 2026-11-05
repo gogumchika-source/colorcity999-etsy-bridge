@@ -5,6 +5,7 @@ import { validateGeneratedListing, generateListingPreview } from "../src/studio/
 import { handleStudio } from "../src/studio/index.js";
 import worker from "../worker.js";
 import { requireStudioOwner } from "../src/studio/auth.js";
+import { evaluateReadiness, getStudioReadiness } from "../src/studio/readiness.js";
 import { deflateRawSync } from "node:zlib";
 
 function crc32(buffer) {
@@ -173,4 +174,45 @@ test("Cloudflare Access owner JWT verifies signature, owner email and audience",
   await assert.rejects(requireStudioOwner(request(await token({ email: "intruder@example.test" })), env), e => e.status === 403);
   await assert.rejects(requireStudioOwner(request(await token({ aud: ["different-audience"] })), env), e => e.status === 403);
   await assert.rejects(requireStudioOwner(request((await token()).slice(0, -2) + "xx"), env), e => e.status === 401);
+});
+
+test("readiness reports missing Etsy listing-write permission without exposing OAuth tokens", async () => {
+  const env = {
+    STUDIO_ENABLED: "preview",
+    AI: { run: async () => {} },
+    ETSY_KV: { get: async key => {
+      assert.equal(key, "etsy:oauth");
+      return { refreshToken: "HIGHLY_PRIVATE_TEST_TOKEN", userId: "12345", scope: "listings_r shops_r transactions_r" };
+    } }
+  };
+  const ready = await getStudioReadiness(env);
+  assert.equal(ready.etsyListingWriteScope, "missing");
+  assert.equal(ready.readyForPreview, true);
+  assert.equal(ready.readyForFutureDraftIntegration, false);
+  assert.equal(ready.checks.noEtsyApiCallsPerformed, true);
+  assert.equal(JSON.stringify(ready).includes("HIGHLY_PRIVATE_TEST_TOKEN"), false);
+});
+test("readiness handles granted scope, absent authorization and KV errors correctly", async () => {
+  const env = { STUDIO_ENABLED: "preview", AI: { run: async () => {} } };
+  const valid = { refreshToken: "test-only", userId: "12345", scope: "listings_r listings_w shops_r" };
+  assert.equal(evaluateReadiness({ enabled: true, aiAvailable: true, kvAvailable: true, oauthRecord: valid }).etsyListingWriteScope, "granted");
+  assert.equal(evaluateReadiness({ enabled: true, aiAvailable: true, kvAvailable: true, oauthRecord: valid }).readyForFutureDraftIntegration, true);
+  assert.equal(evaluateReadiness({ enabled: true, aiAvailable: true, kvAvailable: true, oauthRecord: { scope: "listings_w" } }).readyForFutureDraftIntegration, false);
+  assert.equal((await getStudioReadiness(env)).etsyListingWriteScope, "unverified");
+  env.ETSY_KV = { get: async () => { throw new Error("No KV access"); } };
+  assert.equal((await getStudioReadiness(env)).oauthRecord, "unavailable");
+});
+test("Studio readiness endpoint enforces owner authentication and only returns safe boolean/status fields", async () => {
+  const env = { STUDIO_ENABLED: "preview", AI: { run: async () => {} }, ETSY_KV: { get: async () => ({
+    refreshToken: "never_return_this_token", userId: "12345", scope: "listings_w"
+  }) }};
+  const req = new Request("https://bridge.test/studio/ready");
+  const blocked = await worker.fetch(req, env);
+  assert.equal(blocked.status, 503);
+  const result = await handleStudio(req, env, { authorize: async () => ({ email: "owner@example.test" }) });
+  assert.equal(result.status, 200);
+  const body = await result.text();
+  assert.match(body, /"etsyListingWriteScope":"granted"/);
+  assert.equal(body.includes("never_return_this_token"), false);
+  assert.equal(result.headers.get("Cache-Control"), "no-store");
 });
