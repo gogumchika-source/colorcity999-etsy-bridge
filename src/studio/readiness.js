@@ -25,18 +25,20 @@ export function evaluateReadiness({ enabled, aiAvailable, kvAvailable, oauthReco
 
 export async function getStudioReadiness(env) {
   let oauthRecord;
+  let lookupFailed = false;
   const kvAvailable = Boolean(env.ETSY_KV && typeof env.ETSY_KV.get === "function");
   if (kvAvailable) {
     try {
       oauthRecord = await env.ETSY_KV.get("etsy:oauth", { type: "json" });
     } catch {
       oauthRecord = undefined;
+      lookupFailed = true;
     }
   }
   return evaluateReadiness({
     enabled: env.STUDIO_ENABLED === "preview",
     aiAvailable: Boolean(env.AI && typeof env.AI.run === "function"),
-    kvAvailable,
+    kvAvailable: kvAvailable && !lookupFailed,
     oauthRecord
   });
 }
