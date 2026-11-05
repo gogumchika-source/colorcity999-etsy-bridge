@@ -4,7 +4,8 @@ export function evaluateReadiness({ enabled, aiAvailable, kvAvailable, oauthReco
     ? oauthRecord.scope.trim().split(/\s+/).filter(Boolean)
     : null;
   const scope = scopes === null ? "unverified" : scopes.includes("listings_w") ? "granted" : "missing";
-  const ready = enabled && aiAvailable && kvAvailable && scope === "granted";
+  const hasOauth = Boolean(oauthRecord?.refreshToken && oauthRecord?.userId);
+  const ready = enabled && aiAvailable && kvAvailable && hasOauth && scope === "granted";
   return {
     studioPreviewEnabled: Boolean(enabled),
     ownerAuthentication: "verified_for_this_request",
