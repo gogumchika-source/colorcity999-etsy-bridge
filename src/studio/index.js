@@ -1,6 +1,7 @@
 import { requireStudioOwner } from "./auth.js";
 import { extractListingPackage } from "./zip.js";
 import { generateListingPreview } from "./seo.js";
+import { getStudioReadiness } from "./readiness.js";
 
 // Listing Studio MVP: authenticated preview ONLY. No Etsy write functions are imported.
 const MAX_ZIP_BYTES = 20_000_000;
@@ -35,11 +36,13 @@ function humanLabel(filename) {
 
 export async function handleStudio(request, env, { authorize = requireStudioOwner } = {}) {
   const url = new URL(request.url);
-  if (url.pathname !== "/studio" && url.pathname !== "/studio/preview") error(404, "Not found.");
+  if (!["/studio", "/studio/preview", "/studio/ready"].includes(url.pathname)) error(404, "Not found.");
   if (url.pathname === "/studio" && request.method !== "GET") error(405, "Method not allowed.");
   if (url.pathname === "/studio/preview" && request.method !== "POST") error(405, "Method not allowed.");
+  if (url.pathname === "/studio/ready" && request.method !== "GET") error(405, "Method not allowed.");
   if (env.STUDIO_ENABLED !== "preview") error(503, "Studio is not enabled.");
   await authorize(request, env);
+  if (url.pathname === "/studio/ready") return Response.json(await getStudioReadiness(env), { headers: responseHeaders() });
   if (url.pathname === "/studio") return renderStudio();
   if (request.headers.get("Origin") !== url.origin) error(403, "Cross-origin requests are not allowed.");
   if (request.headers.get("Content-Type") !== "application/zip") error(415, "Upload one ZIP file.");
