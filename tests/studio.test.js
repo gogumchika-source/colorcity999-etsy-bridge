@@ -216,3 +216,16 @@ test("Studio readiness endpoint enforces owner authentication and only returns s
   assert.equal(body.includes("never_return_this_token"), false);
   assert.equal(result.headers.get("Cache-Control"), "no-store");
 });
+
+
+test("isolated preview Worker refuses all production OAuth, assets, API, and MCP routes", async () => {
+  const env = { STUDIO_ISOLATED: "true", STUDIO_ENABLED: "preview" };
+  for (const route of ["/", "/oauth/start", "/oauth/callback", "/api/status", "/api/orders", "/api/listings", "/assets/upload", "/mcp", "/.well-known/oauth-protected-resource"]) {
+    const response = await worker.fetch(new Request("https://preview.test" + route), env);
+    assert.equal(response.status, 404, route + " must not be available on preview Worker");
+  }
+  for (const route of ["/studio", "/studio/ready"]) {
+    const response = await worker.fetch(new Request("https://preview.test" + route), env);
+    assert.equal(response.status, 503, route + " must remain closed without owner settings");
+  }
+});
