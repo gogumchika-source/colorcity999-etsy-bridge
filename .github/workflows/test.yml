@@ -21,3 +21,46 @@ jobs:
           node-version: 22
       - name: Run tests
         run: npm test
+
+
+  verify-owner-etsy-write-grant:
+    # Only this owner's same-repository draft PR. No fork PR receives credentials.
+    if: github.event_name == 'pull_request' && github.event.pull_request.number == 4 && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'feature/listing-studio-preview'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Verify granted Etsy scope using existing protected read-only endpoint
+        env:
+          BRIDGE_API_SECRET: ${{ secrets.BRIDGE_API_SECRET }}
+        run: |
+          node --input-type=module <<'NODE'
+          // Never print credentials, raw OAuth scopes, token fields or response bodies.
+          const secret = process.env.BRIDGE_API_SECRET;
+          if (!secret) {
+            console.log("Etsy listing-write grant: UNVERIFIED (bridge check credential unavailable).");
+            process.exit(0);
+          }
+          const url = "https://colorcity999-etsy-bridge.gogumchika.workers.dev/api/status";
+          try {
+            const response = await fetch(url, {
+              headers: { Authorization: "Bearer " + secret },
+              redirect: "error",
+              signal: AbortSignal.timeout(15000)
+            });
+            if (!response.ok) {
+              console.log("Etsy listing-write grant: UNVERIFIED (protected check unavailable).");
+              process.exit(0);
+            }
+            const status = await response.json();
+            if (status.connected !== true || String(status.shopId) !== "51212373" || typeof status.scope !== "string") {
+              console.log("Etsy listing-write grant: UNVERIFIED (connection, shop or scope record unavailable).");
+              process.exit(0);
+            }
+            const scopes = new Set(status.scope.split(/\s+/).filter(Boolean));
+            console.log("Etsy shop identity: expected ColorCity999 shop.");
+            console.log("Etsy listing-write grant:", scopes.has("listings_w") ? "GRANTED" : "MISSING");
+            console.log("No Etsy write API call was performed.");
+          } catch {
+            console.log("Etsy listing-write grant: UNVERIFIED (request error).");
+          }
+          NODE
