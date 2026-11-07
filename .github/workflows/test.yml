@@ -64,3 +64,36 @@ jobs:
             console.log("Etsy listing-write grant: UNVERIFIED (request error).");
           }
           NODE
+
+
+  deploy-locked-studio-preview:
+    # Safe, separate preview Worker only. This PR is the owner's authorized staging test.
+    if: github.event_name == 'pull_request' && github.event.pull_request.number == 4 && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'feature/listing-studio-preview'
+    needs: [test]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout isolated preview branch
+        uses: actions/checkout@v4
+      - name: Enforce separate, fail-closed preview config
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from "node:fs";
+          const config = JSON.parse(fs.readFileSync("wrangler.studio-preview.jsonc", "utf8"));
+          if (config.name !== "colorcity999-listing-studio-preview" ||
+              config.vars?.STUDIO_ENABLED !== "preview" ||
+              config.vars?.STUDIO_ISOLATED !== "true" ||
+              config.kv_namespaces || config.d1_databases || config.r2_buckets ||
+              config.vars?.STUDIO_ALLOWED_EMAIL || config.vars?.STUDIO_ACCESS_AUD) {
+            throw new Error("Unsafe preview config: deployment cancelled.");
+          }
+          console.log("Separate preview Worker, no Etsy storage/secrets, isolated routes: verified.");
+          NODE
+      - name: Deploy separate locked preview Worker (not production)
+        uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: deploy --config wrangler.studio-preview.jsonc
