@@ -112,7 +112,9 @@ test('Studio protects connection and draft routes with owner authentication and 
   assert.equal((await fixture().account.fetch(new Request('https://studio.internal/publish', { method: 'POST' }))).status, 404);
 });
 test('UI script parses and exposes review, connection and draft controls without publication actions', async () => {
-  const html = await renderStudio().text(); const script = html.match(/<script nonce="[^"]+">([\s\S]*?)<\/script>/)[1];
+  const response = renderStudio();
+  assert.equal(response.headers.get('Referrer-Policy'), 'same-origin'); // Native same-origin POST forms must keep their Origin header.
+  const html = await response.text(); const script = html.match(/<script nonce="[^"]+">([\s\S]*?)<\/script>/)[1];
   assert.doesNotThrow(() => new Function(script)); assert.match(html, /Save draft to Etsy/); assert.match(html, /Publishing is disabled/);
   assert.ok(!script.includes('/publish'));
 });

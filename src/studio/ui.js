@@ -69,6 +69,6 @@ el('saveDraft').addEventListener('click',async()=>{
  }catch(error){draftStatus.textContent=error.message;}finally{busy=false;el('go').disabled=false;el('zip').disabled=false;allowSave();}
 });
 </script></body></html>`, { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store',
-    'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer',
+    'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'same-origin',
     'Content-Security-Policy': "default-src 'none'; script-src 'nonce-" + nonce + "'; style-src 'unsafe-inline'; connect-src 'self'; img-src data:; form-action 'self' https://www.etsy.com; frame-ancestors 'none'; base-uri 'none'" } });
 }
