@@ -7,9 +7,11 @@
     "binding": "AI"
   },
   "vars": {
-    "STUDIO_ENABLED": "preview"
+    "STUDIO_ENABLED": "preview",
+    "STUDIO_ISOLATED": "true"
   },
   "observability": {
     "enabled": true
-  }
+  },
+  "workers_dev": true
 }
