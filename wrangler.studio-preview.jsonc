@@ -8,10 +8,14 @@
   },
   "vars": {
     "STUDIO_ENABLED": "preview",
-    "STUDIO_ISOLATED": "true"
+    "STUDIO_ISOLATED": "true",
+    "STUDIO_ETSY_SHOP_ID": "51212373"
   },
+  "durable_objects": { "bindings": [{ "name": "STUDIO_ACCOUNT", "class_name": "StudioAccount" }] },
+  "migrations": [{ "tag": "studio-account-v1", "new_sqlite_classes": ["StudioAccount"] }],
   "observability": {
     "enabled": true
   },
   "workers_dev": true
 }
+

@@ -1,0 +1,53 @@
+name: Deploy owner-only Studio drafts
+
+on:
+  push:
+    branches: [feature/studio-owner-drafts]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: colorcity999-studio-preview-only
+  cancel-in-progress: false
+
+jobs:
+  deploy-preview-only:
+    if: contains(github.event.head_commit.message, '[deploy-studio]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Test owner guards, OAuth and draft-only uploads
+        run: npm test
+      - name: Confirm isolated preview target
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const config = JSON.parse(fs.readFileSync('wrangler.studio-preview.jsonc', 'utf8'));
+          if (config.name !== 'colorcity999-listing-studio-preview' || config.kv_namespaces || config.vars.STUDIO_ISOLATED !== 'true') throw new Error('Preview isolation check failed.');
+          if (config.durable_objects.bindings[0].class_name !== 'StudioAccount') throw new Error('Missing private Studio account storage.');
+          console.log('Separate preview Worker and separate account storage confirmed.');
+          NODE
+      - name: Deploy separate Studio Worker only
+        uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: deploy --config wrangler.studio-preview.jsonc --keep-vars
+      - name: Verify anonymous login redirects without printing private URLs
+        run: |
+          node --input-type=module <<'NODE'
+          const origin = 'https://colorcity999-listing-studio-preview.gogumchika.workers.dev';
+          for (const path of ['/studio', '/studio/ready', '/studio/connection', '/studio/draft']) {
+            const response = await fetch(origin + path, { redirect: 'manual', signal: AbortSignal.timeout(20000) });
+            const location = response.headers.get('location');
+            const protectedRoute = response.status === 302 && location && new URL(location).hostname.endsWith('.cloudflareaccess.com');
+            if (!protectedRoute) throw new Error('Anonymous protection failed for ' + path);
+            console.log(path + ': anonymous login redirect verified');
+          }
+          console.log('No Etsy writes or production deployments performed by this workflow.');
+          NODE

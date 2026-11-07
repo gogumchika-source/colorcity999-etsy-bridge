@@ -4,6 +4,7 @@ import { protectedResourceMetadata } from "./src/oidc.js";
 import { handleMcp, getMcpMethodNotAllowed } from "./src/mcp.js";
 import { handleAssetUpload, renderAssetUploadPage } from "./src/assets.js";
 import { handleStudio } from "./src/studio/index.js";
+export { StudioAccount } from "./src/studio/account.js";
 
 const REDIRECT_URI = "https://colorcity999-etsy-bridge.gogumchika.workers.dev/oauth/callback";
 const SCOPES = "listings_r listings_w shops_r transactions_r";
@@ -15,7 +16,7 @@ export default {
 
       // Separate preview Worker must never expose production Etsy, OAuth or MCP routes.
       if (env.STUDIO_ISOLATED === "true") {
-        if (url.pathname === "/studio" || url.pathname === "/studio/preview" || url.pathname === "/studio/ready") {
+        if (url.pathname === "/studio" || url.pathname.startsWith("/studio/")) {
           return await handleStudio(request, env);
         }
         return json({ error: "Not found" }, 404);
@@ -124,3 +125,4 @@ function toErrorResponse(error) {
     headers: { "Cache-Control": "no-store", ...(error?.headers || {}) },
   });
 }
+
