@@ -1,4 +1,5 @@
 import { renderStudio } from "./ui.js";
+import { renderProductTransfer } from './transfer.js';
 import { requireStudioOwner } from "./auth.js";
 import { extractListingPackage } from "./zip.js";
 import { generateListingPreview } from "./seo.js";
@@ -48,15 +49,17 @@ function humanLabel(filename) {
 export async function handleStudio(request, env, { authorize = requireStudioOwner } = {}) {
   const url = new URL(request.url);
   const routes = { '/studio/connect': ['POST', '/connect'], '/studio/oauth/callback': ['GET', '/callback'],
-    '/studio/connection': ['GET', '/connection'], '/studio/taxonomy': ['GET', '/taxonomy'], '/studio/draft': ['POST', '/draft'], '/studio/prepare': ['POST', '/prepare'] };
+    '/studio/connection': ['GET', '/connection'], '/studio/taxonomy': ['GET', '/taxonomy'], '/studio/draft': ['POST', '/draft'], '/studio/prepare': ['POST', '/prepare'], '/studio/check-package': ['POST', '/check-package'] };
   const route = routes[url.pathname];
-  if (!["/studio", "/studio/preview", "/studio/ready"].includes(url.pathname) && !route) error(404, "Not found.");
+  if (!["/studio", "/studio/preview", "/studio/ready", '/studio/import'].includes(url.pathname) && !route) error(404, "Not found.");
   if (route && request.method !== route[0]) error(405, "Method not allowed.");
   if (url.pathname === "/studio" && request.method !== "GET") error(405, "Method not allowed.");
   if (url.pathname === "/studio/preview" && request.method !== "POST") error(405, "Method not allowed.");
   if (url.pathname === "/studio/ready" && request.method !== "GET") error(405, "Method not allowed.");
+  if (url.pathname === '/studio/import' && request.method !== 'GET') error(405, 'Method not allowed.');
   if (env.STUDIO_ENABLED !== "preview") error(503, "Studio is not enabled.");
   await authorize(request, env);
+  if (url.pathname === '/studio/import') return renderProductTransfer();
   if (route) {
     if (!env.STUDIO_ACCOUNT) error(503, "Etsy draft connection is not configured yet.");
     if (request.method === "POST" && request.headers.get("Origin") !== url.origin) error(403, "Cross-origin requests are not allowed.");
@@ -65,7 +68,7 @@ export async function handleStudio(request, env, { authorize = requireStudioOwne
     const internalHeaders = new Headers();
     if (request.headers.has("Cookie")) internalHeaders.set("Cookie", request.headers.get("Cookie"));
     let body;
-    if (url.pathname === "/studio/draft" || url.pathname === '/studio/prepare') {
+    if (url.pathname === "/studio/draft" || url.pathname === '/studio/prepare' || url.pathname === '/studio/check-package') {
       if (!request.headers.get("Content-Type")?.startsWith("multipart/form-data;")) error(415, "Upload your ZIP and reviewed listing details.");
       internalHeaders.set("Content-Type", request.headers.get("Content-Type"));
       body = boundedForwardBody(request, 20_100_000);

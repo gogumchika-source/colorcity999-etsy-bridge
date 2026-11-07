@@ -42,6 +42,7 @@ export class StudioAccount {
     if (url.pathname === '/taxonomy' && request.method === 'GET') return this.taxonomy(url.searchParams.get('q'));
     if (url.pathname === '/draft' && request.method === 'POST') return this.draft(request);
     if (url.pathname === '/prepare' && request.method === 'POST') return this.prepare(request);
+    if (url.pathname === '/check-package' && request.method === 'POST') return this.prepare(request, { dryRun: true });
     return json({ error: 'Not found.' }, 404);
   }
   configured() {
@@ -146,7 +147,7 @@ export class StudioAccount {
     const pkg = await extractListingPackage(bytes);
     return this.savePackage(input, pkg);
   }
-  async prepare(request) {
+  async prepare(request, { dryRun = false } = {}) {
     const form = await request.formData(), file = form.get('package');
     if (!file || typeof file.arrayBuffer !== 'function' || file.size > 20000000) fail(400, 'Choose one prepared product ZIP no larger than 20 MB.');
     const pkg = await extractListingPackage(new Uint8Array(await file.arrayBuffer()));
@@ -155,7 +156,9 @@ export class StudioAccount {
     const category = selectCategory(await this.read('/seller-taxonomy/nodes'), metadata);
     const input = listingDefaults({ ...metadata, taxonomyId: category.id });
     validateDraft(input);
-    checkPackage(pkg, { strictImages: true });
+    const packageChecks = checkPackage(pkg, { strictImages: true });
+    if (dryRun) return json({ checked: true, noEtsyWritesPerformed: true, title: input.title, tags: input.tags,
+      price: input.price, currency: input.currency, category, packageChecks, publishingEnabled: false });
     return this.savePackage(input, pkg);
   }
   async savePackage(input, pkg) {

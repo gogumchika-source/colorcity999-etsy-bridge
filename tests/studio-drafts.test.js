@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { StudioAccount, CALLBACK, STUDIO_ORIGIN, validateDraft } from '../src/studio/account.js';
 import { renderStudio } from '../src/studio/ui.js';
+import { renderProductTransfer } from '../src/studio/transfer.js';
 import { handleStudio } from '../src/studio/index.js';
 import worker from '../worker.js';
 import { sample, zip, pdf, png } from './studio-fixtures.js';
@@ -81,6 +82,12 @@ test('prepared ZIP automatically chooses a real category, adds disclosure and up
   assert.equal(result.readbackVerified, true); assert.equal(mock.writes.length, 3);
   assert.equal(mock.writes[0].body.get('price'), '9.99'); assert.equal(mock.writes[0].body.get('taxonomy_id'), '42');
   assert.ok(mock.writes[0].body.get('description').includes(AI_DISCLOSURE)); assert.equal(mock.writes[2].body.get('alt_text'), metadata.imageAltTexts['cover.png']);
+});
+test('product transfer can verify the prepared package without creating an Etsy listing', async t => {
+  const {account}=fixture(), mock=etsyMock();t.mock.method(globalThis,'fetch',mock.fetch);
+  const body=new FormData();body.append('package',new Blob([zip([['book.pdf',pdf],['cover.png',png],['listing.json',JSON.stringify({...listing,schemaVersion:1,productType:'coloring_book'})]])]),'prepared.zip');
+  const response=await account.fetch(new Request('https://studio.internal/check-package',{method:'POST',body}));
+  const result=await response.json();assert.equal(response.status,200);assert.equal(result.checked,true);assert.equal(result.noEtsyWritesPerformed,true);assert.equal(result.tags.length,13);assert.equal(mock.writes.length,0);
 });
 test('metadata changes and ZIP compression do not bypass duplicate prevention for the same PDF', async t => {
   const { account } = fixture(), mock = etsyMock(); t.mock.method(globalThis, 'fetch', mock.fetch);
@@ -166,7 +173,7 @@ test('OAuth verifies the expected shop before storing any credential and consume
   assert.equal((await account.fetch(request())).status, 400);
 });
 test('Studio protects connection and draft routes with owner authentication and same-origin POST guard', async () => {
-  for (const path of ['/studio/connect', '/studio/draft']) await assert.rejects(handleStudio(new Request(STUDIO_ORIGIN + path, { method: 'POST', headers: { Origin: 'https://evil.invalid' } }), { STUDIO_ENABLED: 'preview', STUDIO_ACCOUNT: {} }, { authorize: async () => {} }), /Cross-origin/);
+  for (const path of ['/studio/connect', '/studio/draft', '/studio/prepare', '/studio/check-package']) await assert.rejects(handleStudio(new Request(STUDIO_ORIGIN + path, { method: 'POST', headers: { Origin: 'https://evil.invalid' } }), { STUDIO_ENABLED: 'preview', STUDIO_ACCOUNT: {} }, { authorize: async () => {} }), /Cross-origin/);
   const response = await worker.fetch(new Request(STUDIO_ORIGIN + '/studio/connection'), { STUDIO_ENABLED: 'preview', STUDIO_ISOLATED: 'true' });
   assert.equal(response.status, 503);
   assert.equal((await fixture().account.fetch(new Request('https://studio.internal/publish', { method: 'POST' }))).status, 404);
@@ -202,4 +209,10 @@ test('UI script parses and exposes review, connection and draft controls without
   const html = await response.text(); const script = html.match(/<script nonce="[^"]+">([\s\S]*?)<\/script>/)[1];
   assert.doesNotThrow(() => new Function(script)); assert.match(html, /Save draft to Etsy/); assert.match(html, /Publishing is disabled/);
   assert.ok(!script.includes('/publish'));
+});
+test('the transfer interface stays behind owner authentication and contains only local authenticated form requests',async()=>{
+  const html=await renderProductTransfer().text();const script=html.match(/<script nonce="[^"]+">([\s\S]*?)<\/script>/)[1];
+  assert.doesNotThrow(()=>new Function(script));assert.match(script,/\/studio\/check-package/);assert.match(script,/\/studio\/prepare/);assert.ok(!script.includes('/publish'));
+  assert.equal((await worker.fetch(new Request(STUDIO_ORIGIN+'/studio/import'),{STUDIO_ENABLED:'preview',STUDIO_ISOLATED:'true'})).status,503);
+  const response=await handleStudio(new Request(STUDIO_ORIGIN+'/studio/import'),{STUDIO_ENABLED:'preview'},{authorize:async()=>{}});assert.equal(response.status,200);
 });
