@@ -97,3 +97,29 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: deploy --config wrangler.studio-preview.jsonc
+
+      - name: Smoke-test locked preview over HTTPS (no credentials, no Etsy writes)
+        run: |
+          node --input-type=module <<'NODE'
+          const base = "https://colorcity999-listing-studio-preview.gogumchika.workers.dev";
+          const cases = [
+            ["/", [404, 403]],
+            ["/oauth/start", [404, 403]],
+            ["/api/status", [404, 403]],
+            ["/api/listings", [404, 403]],
+            ["/mcp", [404, 403]],
+            ["/assets/upload", [404, 403]],
+            ["/studio", [503, 403, 302]],
+            ["/studio/ready", [503, 403, 302]]
+          ];
+          for (const [path, allowed] of cases) {
+            const response = await fetch(base + path, {
+              redirect: "manual",
+              signal: AbortSignal.timeout(12000)
+            });
+            if (!allowed.includes(response.status)) throw new Error("Unexpected preview response for " + path + ": HTTP " + response.status);
+            console.log("Locked preview", path, "HTTP", response.status);
+          }
+          console.log("Safe preview smoke check completed. No write requests performed.");
+          NODE
+
