@@ -74,3 +74,26 @@ Do not paste OAuth codes, cookies, access tokens or bridge API secrets. The OAut
 - Publishing requires a future reviewed draft/upload integration, idempotency safeguards and separate approval.
 - When Studio moves into the current production Worker, Access must protect ONLY Studio paths (/studio, /studio/preview, /studio/ready), not the whole Worker. Protecting the whole current Worker could break OAuth callbacks and GitHub health checks.
 - Studio's current ZIP limit is 20 MB; larger files require controlled upload improvements.
+
+
+## Verified November 7, 2026 — isolated preview and Etsy grant
+
+- After the owner reauthorized Etsy, a one-time, protected read-only CI probe confirmed ColorCity999 shop 51212373 and granted listings_w. No tokens or raw scopes were printed: https://github.com/gogumchika-source/colorcity999-etsy-bridge/actions/runs/42386212719
+- The separate preview Worker colorcity999-listing-studio-preview deployed with Workers AI but without production KV or Etsy secrets. Live HTTPS smoke checks passed: root, OAuth, API, MCP and legacy asset paths returned HTTP 404; Studio and readiness returned HTTP 503 without owner configuration: https://github.com/gogumchika-source/colorcity999-etsy-bridge/actions/runs/42386580851
+- Preview URL: https://colorcity999-listing-studio-preview.gogumchika.workers.dev/studio
+- After the test, one-time deployment and credential-check CI jobs were removed from the development branch. Future branch commits do not automatically redeploy the preview.
+- No production bridge redeploy and no Etsy write operations occurred.
+
+### Owner-only Cloudflare Access remains required
+
+These actions need Cloudflare account owner access; the connected GitHub integration does not manage Cloudflare Zero Trust policies:
+
+1. Cloudflare dashboard > Workers & Pages > colorcity999-listing-studio-preview > Access > Protect this Worker behind Access > All traffic. Protect only this Worker, not the existing Etsy bridge or all Workers.
+2. Create an Access allow policy for the exact previously confirmed owner's email; not the email domain and not all Cloudflare members. Use verified email sign-in.
+3. Obtain the actual Cloudflare Access team domain and application audience (AUD); never guess them.
+4. On the PREVIEW worker only, add STUDIO_ACCESS_TEAM_DOMAIN, STUDIO_ACCESS_AUD, and STUDIO_ALLOWED_EMAIL as confidential Worker settings. The allowed email must match the owner-only Access policy. Do not put personal identity details, tokens, or secrets in public GitHub.
+5. Test anonymous denial, then owner sign-in at /studio and /studio/ready. The isolated preview deliberately has no production Etsy KV and therefore reports the Etsy grant unverified even though the production protected bridge has confirmed listings_w.
+6. Upload one harmless ZIP and review AI metadata. Workers AI live output and billing have not yet been verified.
+7. Etsy draft/uploads and publishing are not enabled in this preview and still require separate approval.
+
+Official guidance: https://developers.cloudflare.com/workers/configuration/cloudflare-access/
