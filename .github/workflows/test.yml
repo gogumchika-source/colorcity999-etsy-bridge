@@ -21,3 +21,31 @@ jobs:
           node-version: 22
       - name: Run tests
         run: npm test
+
+  check-private-preview-access:
+    if: github.event_name == 'pull_request' && github.event.pull_request.number == 4 && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Check preview Worker unauthenticated access (read-only)
+        run: |
+          node --input-type=module <<'NODE'
+          const base = "https://colorcity999-listing-studio-preview.gogumchika.workers.dev";
+          for (const path of ["/studio", "/studio/ready", "/oauth/start"]) {
+            try {
+              const response = await fetch(base + path, {
+                redirect: "manual",
+                signal: AbortSignal.timeout(12000)
+              });
+              const location = response.headers.get("location") || "";
+              const destination = location ? new URL(location, base) : null;
+              const accessRedirect = destination && (/cloudflareaccess\.com$/.test(destination.hostname) || destination.pathname.includes("/cdn-cgi/access/"));
+              console.log(path + " HTTP " + response.status + "; Access login redirect: " + Boolean(accessRedirect));
+              if (path !== "/oauth/start" && response.status === 503) console.log(path + " still returns locked Studio 503; Access may not be enabled.");
+              if (response.status === 200 && path !== "/oauth/start") console.log("WARNING: Private Studio returned HTTP 200 to anonymous request.");
+            } catch (error) {
+              console.log(path + " access response unverified (" + (error.name === "TimeoutError" ? "timeout" : "request failed") + ").");
+            }
+          }
+          console.log("Only unauthenticated GETs were made. No credentials or Etsy writes.");
+          NODE
