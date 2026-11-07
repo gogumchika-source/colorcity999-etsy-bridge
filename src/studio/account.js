@@ -1,5 +1,6 @@
 import { etsyRequest } from '../etsy.js';
 import { extractListingPackage } from './zip.js';
+import { listingDefaults, validateEtsyText, checkPackage, selectCategory, AI_DISCLOSURE } from './standards.js';
 
 export const STUDIO_ORIGIN = 'https://colorcity999-listing-studio-preview.gogumchika.workers.dev';
 export const CALLBACK = STUDIO_ORIGIN + '/studio/oauth/callback';
@@ -30,7 +31,7 @@ export class StudioAccount {
     const task = this.tail.then(() => this.route(request));
     this.tail = task.catch(() => {});
     try { return await task; }
-    catch (error) { return json({ error: error.status ? error.message : 'Studio request failed. Try again or review the existing draft in Etsy.' }, error.status || 502); }
+    catch (error) { return json({ ...(error.safeJob || {}), error: error.status ? error.message : 'Studio request failed. Try again or review the existing draft in Etsy.' }, error.status || 502); }
   }
   async route(request) {
     const url = new URL(request.url);
@@ -40,6 +41,7 @@ export class StudioAccount {
     if (url.pathname === '/callback' && request.method === 'GET') return this.callback(request);
     if (url.pathname === '/taxonomy' && request.method === 'GET') return this.taxonomy(url.searchParams.get('q'));
     if (url.pathname === '/draft' && request.method === 'POST') return this.draft(request);
+    if (url.pathname === '/prepare' && request.method === 'POST') return this.prepare(request);
     return json({ error: 'Not found.' }, 404);
   }
   configured() {
@@ -124,7 +126,10 @@ export class StudioAccount {
   async mutate(path, body) {
     // Never automatically retry a write; an ambiguous response must be reconciled manually.
     const response = await etsyRequest(this.apiEnv, path, { method: 'POST', body, allowRefresh: false });
-    if (!response.ok) fail(502, 'Etsy did not confirm the upload. Review the existing draft in Etsy before trying another package.');
+    if (!response.ok) {
+      const rejected = [400,401,403,404,413,415,422].includes(response.status);
+      throw Object.assign(new Error(rejected ? 'Etsy rejected this draft or file (HTTP ' + response.status + '). The confirmed rejection can be corrected without creating another draft.' : 'Etsy did not confirm the upload. Review the existing draft in Etsy before trying another package.'), { status: 502, confirmedRejection: rejected });
+    }
     return response.json();
   }
   async draft(request) {
@@ -135,19 +140,40 @@ export class StudioAccount {
     if (!file || typeof file.arrayBuffer !== 'function' || file.size > 20000000) fail(400, 'Choose one ZIP no larger than 20 MB.');
     let input;
     try { input = JSON.parse(form.get('listing')); } catch { fail(400, 'Listing details are invalid.'); }
+    input = listingDefaults(input);
     validateDraft(input);
     const bytes = new Uint8Array(await file.arrayBuffer());
     const pkg = await extractListingPackage(bytes);
-    if (pkg.images.some(x => !['image/png', 'image/jpeg'].includes(x.kind))) fail(400, 'For Etsy drafts, use JPG or PNG preview images in your ZIP.');
-    const packageHash = await digest(bytes);
-    // Same ZIP always resolves to the same journal, even when metadata or browser session changes.
+    return this.savePackage(input, pkg);
+  }
+  async prepare(request) {
+    const form = await request.formData(), file = form.get('package');
+    if (!file || typeof file.arrayBuffer !== 'function' || file.size > 20000000) fail(400, 'Choose one prepared product ZIP no larger than 20 MB.');
+    const pkg = await extractListingPackage(new Uint8Array(await file.arrayBuffer()));
+    const metadata = pkg.listingMetadata;
+    if (!metadata || metadata.reviewed !== true || metadata.schemaVersion !== 1) fail(422, 'This product has not been prepared yet. Send the product in chat so its actual PDF, images and listing can be checked.');
+    const category = selectCategory(await this.read('/seller-taxonomy/nodes'), metadata);
+    const input = listingDefaults({ ...metadata, taxonomyId: category.id });
+    validateDraft(input);
+    checkPackage(pkg, { strictImages: true });
+    return this.savePackage(input, pkg);
+  }
+  async savePackage(input, pkg) {
+    const record = await this.ctx.storage.get('etsy:oauth');
+    if (!this.configured() || !record?.refreshToken || !writeGranted(record) || String(record.shopId) !== this.env.STUDIO_ETSY_SHOP_ID) fail(503, 'Connect the ColorCity999 Etsy shop first.');
+    const packageChecks = checkPackage(pkg);
+    const packageHash = await digest(pkg.pdf.bytes);
+    // The same PDF always resolves to one journal, even if ZIP compression or listing metadata changes.
     const key = 'draft:' + packageHash;
     let job = await this.ctx.storage.get(key);
     const fingerprint = await digest(new TextEncoder().encode(JSON.stringify(input)));
-    if (job?.complete) return json({ ...publicJob(job), alreadyCreated: true });
+    if (job?.complete) {
+      await this.verifyDraft(job, job.expectedListing, job.packageChecks.images.length);
+      return json({ ...publicJob(job), alreadyCreated: true });
+    }
     if (job?.inFlight) return json({ ...publicJob(job), error: 'A previous Etsy response was interrupted. Review this draft in Etsy; automatic retries are blocked to avoid duplicates.' }, 409);
     if (job && job.fingerprint !== fingerprint) fail(409, 'This ZIP already has a draft in progress. Keep the original details or review it in Etsy.');
-    if (!job) job = { fingerprint, uploaded: [], createdAt: Date.now(), listingId: null, complete: false };
+    if (!job) job = { fingerprint, uploaded: [], createdAt: Date.now(), listingId: null, complete: false, expectedListing: input, packageChecks };
     // Read checks refresh the token before the first write; write requests never refresh/retry.
     const shop = await this.read('/shops/' + this.env.STUDIO_ETSY_SHOP_ID);
     if (String(shop.shop_id) !== this.env.STUDIO_ETSY_SHOP_ID || shop.currency_code !== input.currency) fail(409, 'Shop currency changed. Reload the connection and review the price.');
@@ -160,9 +186,11 @@ export class StudioAccount {
       const body = new URLSearchParams({ quantity: '999', title: input.title.trim(), description: input.description.trim(),
         price: Number(input.price).toFixed(2), taxonomy_id: String(input.taxonomyId), type: 'download',
         who_made: 'i_did', when_made: '2020_2026', is_supply: 'false', should_auto_renew: 'false' });
-      for (const tag of input.tags) body.append('tags[]', tag.trim());
+      body.set('tags', input.tags.map(tag => tag.trim()).join(','));
       job.inFlight = 'create'; await this.ctx.storage.put(key, job);
-      const listing = await this.mutate('/shops/' + this.env.STUDIO_ETSY_SHOP_ID + '/listings', body);
+      let listing;
+      try { listing = await this.mutate('/shops/' + this.env.STUDIO_ETSY_SHOP_ID + '/listings', body); }
+      catch (error) { if (error.confirmedRejection) await this.ctx.storage.delete(key); throw error; }
       if (!Number.isSafeInteger(listing.listing_id) || listing.state !== 'draft' || String(listing.shop_id) !== this.env.STUDIO_ETSY_SHOP_ID) fail(502, 'Etsy did not confirm a draft for this shop. Review the listing in Etsy.');
       job.listingId = listing.listing_id; job.inFlight = null; await this.ctx.storage.put(key, job);
     }
@@ -172,17 +200,38 @@ export class StudioAccount {
       const listing = await this.read('/listings/' + job.listingId);
       if (listing.state !== 'draft' || String(listing.shop_id) !== this.env.STUDIO_ETSY_SHOP_ID) fail(409, 'Only this Studio-created draft can receive files. No active listings are changed.');
       const asset = assets[i], body = new FormData();
-      const name = asset.name.split('/').pop();
+      const name = asset.purpose === 'files' ? packageChecks.customerFilename : asset.name.split('/').pop();
       body.append(asset.purpose === 'files' ? 'file' : 'image', new Blob([asset.bytes], { type: asset.kind }), name);
       if (asset.purpose === 'files') body.append('name', name);
+      else body.append('alt_text', String(input.imageAltTexts?.[asset.name] || '').slice(0, 500));
       body.append('rank', String(asset.purpose === 'files' ? 1 : i));
       job.inFlight = 'upload:' + i; await this.ctx.storage.put(key, job);
-      const uploaded = await this.mutate('/shops/' + this.env.STUDIO_ETSY_SHOP_ID + '/listings/' + job.listingId + '/' + asset.purpose, body);
+      let uploaded;
+      try { uploaded = await this.mutate('/shops/' + this.env.STUDIO_ETSY_SHOP_ID + '/listings/' + job.listingId + '/' + asset.purpose, body); }
+      catch (error) { if (error.confirmedRejection) { job.inFlight = null; await this.ctx.storage.put(key, job); } error.safeJob = publicJob(job); throw error; }
       if (!(uploaded.listing_image_id || uploaded.listing_file_id || uploaded.file_id)) fail(502, 'Etsy did not confirm the uploaded file. Review the draft in Etsy.');
       job.uploaded.push(i); job.inFlight = null; await this.ctx.storage.put(key, job);
     }
-    job.complete = true; await this.ctx.storage.put(key, job);
+    try { await this.verifyDraft(job, input, pkg.images.length); }
+    catch (error) { error.safeJob = publicJob(job); throw error; }
+    job.complete = true; job.readbackVerified = true; job.verifiedAt = Date.now(); await this.ctx.storage.put(key, job);
     return json(publicJob(job));
+  }
+  async verifyDraft(job, input, imageCount) {
+    const listing = await this.read('/listings/' + job.listingId);
+    if (listing.state !== 'draft' || String(listing.shop_id) !== this.env.STUDIO_ETSY_SHOP_ID) fail(409, 'This product is no longer an unpublished draft in the configured shop. No changes were made.');
+    const images = results(await this.read('/listings/' + job.listingId + '/images'));
+    const files = results(await this.read('/shops/' + this.env.STUDIO_ETSY_SHOP_ID + '/listings/' + job.listingId + '/files'));
+    const price = typeof listing.price === 'object' ? Number(listing.price.amount) / Number(listing.price.divisor) : Number(listing.price);
+    const currency = listing.price?.currency_code || listing.currency_code;
+    const actualTags = Array.isArray(listing.tags) ? listing.tags.map(x=>x.trim().toLowerCase()).sort() : [];
+    const expectedTags = [...input.tags].sort();
+    if (listing.title !== input.title || listing.description !== input.description || !listing.description.includes(AI_DISCLOSURE) ||
+      (!listing.is_digital && listing.type !== 'download') || listing.taxonomy_id !== input.taxonomyId ||
+      Math.round(price * 100) !== Math.round(Number(input.price) * 100) || currency !== input.currency ||
+      JSON.stringify(actualTags) !== JSON.stringify(expectedTags) || images.length !== imageCount || files.length !== 1) {
+      fail(409, 'Etsy saved the draft, but its read-back checks did not match all prepared details. Review the draft before publishing.');
+    }
   }
 }
 
@@ -192,8 +241,10 @@ export function validateDraft(input) {
   if (!Array.isArray(input.tags) || input.tags.length !== 13 || new Set(input.tags.map(x => typeof x === 'string' ? x.trim().toLowerCase() : '')).size !== 13 || input.tags.some(x => typeof x !== 'string' || !x.trim() || x.length > 20)) fail(400, 'Use 13 unique tags, each 1–20 characters.');
   if (!/^\d{1,5}(\.\d{1,2})?$/.test(String(input.price)) || Number(input.price) <= 0) fail(400, 'Use a positive price with up to two decimal places.');
   if (!Number.isSafeInteger(input.taxonomyId) || input.taxonomyId < 1 || !/^[A-Z]{3}$/.test(input.currency || '')) fail(400, 'Choose an Etsy category and confirm the shop currency.');
+  validateEtsyText(input);
 }
 function publicJob(job) {
   return { listingId: job.listingId, state: 'draft', complete: job.complete, uploadedFiles: job.uploaded.length,
-    publishingEnabled: false, reviewUrl: job.listingId ? 'https://www.etsy.com/your/shops/me/listing-editor/edit/' + job.listingId : null };
+    publishingEnabled: false, readbackVerified: Boolean(job.readbackVerified), packageChecks: job.packageChecks,
+    reviewUrl: job.listingId ? 'https://www.etsy.com/your/shops/me/listing-editor/edit/' + job.listingId : null };
 }

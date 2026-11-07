@@ -4,7 +4,8 @@ import { StudioAccount, CALLBACK, STUDIO_ORIGIN, validateDraft } from '../src/st
 import { renderStudio } from '../src/studio/ui.js';
 import { handleStudio } from '../src/studio/index.js';
 import worker from '../worker.js';
-import { sample } from './studio-fixtures.js';
+import { sample, zip, pdf, png } from './studio-fixtures.js';
+import { AI_DISCLOSURE, checkPackage, buyerFilename } from '../src/studio/standards.js';
 
 const token = { accessToken: '111.private-access', refreshToken: '111.private-refresh', userId: '111', shopId: 51212373,
   expiresAt: Date.now() + 3600000, scope: 'listings_r listings_w shops_r', currency: 'USD' };
@@ -24,18 +25,24 @@ function draftRequest(input = listing) {
 }
 function etsyMock({ failUpload = false, active = false } = {}) {
   const writes = [];
+  let created = {};
   const fetch = async (url, options = {}) => {
     const path = new URL(url).pathname;
     const method = options.method || 'GET';
     if (method === 'POST') {
       writes.push({ path, body: options.body });
-      if (path.endsWith('/listings')) return Response.json({ listing_id: 1001, shop_id: 51212373, state: 'draft' });
+      if (path.endsWith('/listings')) {
+        created = { title: options.body.get('title'), description: options.body.get('description'), tags: options.body.get('tags').split(','), taxonomy_id: Number(options.body.get('taxonomy_id')), type: 'download', price: { amount: Math.round(Number(options.body.get('price')) * 100), divisor: 100, currency_code: 'USD' } };
+        return Response.json({ listing_id: 1001, shop_id: 51212373, state: 'draft' });
+      }
       if (failUpload) throw new Error('interrupted');
       return Response.json(path.endsWith('/files') ? { listing_file_id: 2001 } : { listing_image_id: 3001 });
     }
     if (path.endsWith('/seller-taxonomy/nodes')) return Response.json({ results: [{ id: 42, name: 'Coloring Books', children: [] }] });
     if (path.endsWith('/shops/51212373')) return Response.json({ shop_id: 51212373, currency_code: 'USD' });
-    if (path.endsWith('/listings/1001')) return Response.json({ listing_id: 1001, shop_id: 51212373, state: active ? 'active' : 'draft' });
+    if (path.endsWith('/listings/1001')) return Response.json({ ...created, listing_id: 1001, shop_id: 51212373, state: active ? 'active' : 'draft' });
+    if (path.endsWith('/listings/1001/images')) return Response.json({ results: writes.filter(x=>x.path.endsWith('/images')).map((_,i)=>({ listing_image_id: 3001+i })) });
+    if (path.endsWith('/listings/1001/files')) return Response.json({ results: writes.filter(x=>x.path.endsWith('/files')).map(()=>({ listing_file_id: 2001 })) });
     throw new Error('Unexpected call: ' + path);
   };
   return { fetch, writes };
@@ -57,11 +64,64 @@ test('a reviewed package creates exactly one digital draft and uploads PDF plus 
   const { account } = fixture(), mock = etsyMock(); t.mock.method(globalThis, 'fetch', mock.fetch);
   const response = await account.fetch(draftRequest()); const result = await response.json();
   assert.equal(response.status, 200); assert.equal(result.complete, true); assert.equal(result.state, 'draft');
+  assert.equal(result.readbackVerified, true); assert.ok(mock.writes[0].body.get('description').includes(AI_DISCLOSURE));
   assert.equal(mock.writes.length, 4); assert.equal(mock.writes[0].body.get('type'), 'download');
+  assert.equal(mock.writes[0].body.get('tags'), listing.tags.join(',')); assert.equal(mock.writes[0].body.has('tags[]'), false);
   assert.equal(mock.writes[0].body.has('state'), false);
   assert.equal(mock.writes[1].body.get('file').type, 'application/pdf');
   const repeat = await account.fetch(draftRequest({ ...listing, title: 'Changed title' }));
   assert.equal((await repeat.json()).alreadyCreated, true); assert.equal(mock.writes.length, 4);
+});
+test('prepared ZIP automatically chooses a real category, adds disclosure and uploads only product assets', async t => {
+  const { account } = fixture(), mock = etsyMock(); t.mock.method(globalThis, 'fetch', mock.fetch);
+  const metadata = { ...listing, taxonomyId: undefined, price: undefined, currency: undefined, schemaVersion: 1, productType: 'coloring_book', imageAltTexts: { 'cover.png': 'Original coloring book cover.' } };
+  const body = new FormData(); body.append('package', new Blob([zip([['book.pdf',pdf],['cover.png',png],['listing.json',JSON.stringify(metadata)]])]), 'prepared.zip');
+  const response = await account.fetch(new Request('https://studio.internal/prepare', { method: 'POST', body }));
+  const result = await response.json(); assert.equal(response.status, 200, JSON.stringify(result));
+  assert.equal(result.readbackVerified, true); assert.equal(mock.writes.length, 3);
+  assert.equal(mock.writes[0].body.get('price'), '9.99'); assert.equal(mock.writes[0].body.get('taxonomy_id'), '42');
+  assert.ok(mock.writes[0].body.get('description').includes(AI_DISCLOSURE)); assert.equal(mock.writes[2].body.get('alt_text'), metadata.imageAltTexts['cover.png']);
+});
+test('metadata changes and ZIP compression do not bypass duplicate prevention for the same PDF', async t => {
+  const { account } = fixture(), mock = etsyMock(); t.mock.method(globalThis, 'fetch', mock.fetch);
+  const metadata = { ...listing, schemaVersion: 1, productType: 'coloring_book' };
+  for (const compress of [false,true]) {
+    const body = new FormData(); body.append('package',new Blob([zip([['book.pdf',pdf],['cover.png',png],['page.png',png],['listing.json',JSON.stringify(metadata)]],compress)]),'prepared.zip');
+    const response = await account.fetch(new Request('https://studio.internal/prepare',{ method:'POST',body })); assert.equal(response.status,200);
+  }
+  assert.equal(mock.writes.length,4);
+});
+test('prepared path rejects missing file review and low-resolution images before any Etsy write', async t => {
+  const { account } = fixture(), mock = etsyMock(); t.mock.method(globalThis, 'fetch', mock.fetch);
+  const body = new FormData(); body.append('package',new Blob([sample()]),'raw.zip');
+  assert.equal((await account.fetch(new Request('https://studio.internal/prepare',{ method:'POST',body }))).status,422);
+  const small = Buffer.from(png); small.writeUInt32BE(1,16); small.writeUInt32BE(1,20);
+  assert.throws(()=>checkPackage({pdf:{name:'book.pdf',bytes:pdf},images:[{name:'cover.png',kind:'image/png',bytes:small}]},{strictImages:true}),/2000 pixels/);
+  assert.equal(mock.writes.length,0);
+});
+test('Etsy-invalid tags and repeated title symbols are rejected and customer filenames are safe', () => {
+  assert.throws(()=>validateDraft({...listing,tags:[...listing.tags.slice(0,12),'tag!']}),/keyword phrases/);
+  assert.throws(()=>validateDraft({...listing,title:'Coloring & Drawing & Learning'}),/only once/);
+  assert.match(buyerFilename('folder/Original PDF (coloring) — '+ 'x'.repeat(100)+'.pdf'),/^[A-Za-z0-9._-]{1,70}$/);
+});
+test('a confirmed Etsy rejection clears the create marker so a corrected request can succeed', async t => {
+  const {account}=fixture(), mock=etsyMock(); let rejected=false;
+  t.mock.method(globalThis,'fetch',async (url,options={})=>{
+    if(options.method==='POST'&&String(url).endsWith('/listings')&&!rejected){rejected=true;return Response.json({error:'Invalid input'},{status:400});}
+    return mock.fetch(url,options);
+  });
+  assert.equal((await account.fetch(draftRequest())).status,502);
+  assert.equal((await account.fetch(draftRequest())).status,200);
+  assert.equal(mock.writes.length,4);
+});
+test('incorrect Etsy read-back cannot be reported as a ready-to-publish draft', async t => {
+  const {account}=fixture(),mock=etsyMock();let listingReads=0;
+  t.mock.method(globalThis,'fetch',async (url,options={})=>{
+    const response=await mock.fetch(url,options);
+    if((options.method||'GET')==='GET'&&String(url).endsWith('/listings/1001')&&++listingReads>3){const data=await response.json();return Response.json({...data,tags:['incorrect']});}
+    return response;
+  });
+  const response=await account.fetch(draftRequest());const data=await response.json();assert.equal(response.status,409);assert.equal(data.readbackVerified,false);assert.ok(data.reviewUrl);
 });
 test('simultaneous retries serialize and reuse the single completed draft', async t => {
   const { account } = fixture(), mock = etsyMock(); t.mock.method(globalThis, 'fetch', mock.fetch);

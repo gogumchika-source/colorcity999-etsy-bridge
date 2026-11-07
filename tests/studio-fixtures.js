@@ -1,4 +1,4 @@
-import { deflateRawSync } from 'node:zlib';
+import { deflateRawSync, deflateSync } from 'node:zlib';
 function crc32(buffer) {
   let crc = -1;
   for (const b of buffer) {
@@ -45,7 +45,14 @@ function zip(entries, useDeflate = false) {
   return Buffer.concat([...chunks, centralData, eocd]);
 }
 const pdf = Buffer.from("%PDF-1.4\n1 0 obj\n<<>>\nendobj\n");
-const png = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 0]);
+function pngChunk(kind, bytes) {
+  const type = Buffer.from(kind), size = Buffer.alloc(4), crc = Buffer.alloc(4);
+  size.writeUInt32BE(bytes.length); crc.writeUInt32BE(crc32(Buffer.concat([type, bytes])));
+  return Buffer.concat([size, type, bytes, crc]);
+}
+const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(2000, 0); ihdr.writeUInt32BE(2000, 4); ihdr[8] = 8;
+const pixels = Buffer.alloc(2001 * 2000, 255); for (let y = 0; y < 2000; y++) pixels[y * 2001] = 0;
+const png = Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]),pngChunk('IHDR',ihdr),pngChunk('IDAT',deflateSync(pixels)),pngChunk('IEND',Buffer.alloc(0))]);
 const sample = () => zip([["Mia_and_Max_Alphabet.pdf", pdf], ["02-page.png", png], ["cover.png", png]]);
 
 export { sample, zip, pdf, png };

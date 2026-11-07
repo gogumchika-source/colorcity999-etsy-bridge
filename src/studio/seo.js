@@ -1,3 +1,4 @@
+import { listingDefaults } from './standards.js';
 // AI metadata generation is preview-only: this module never calls Etsy.
 function invalid(message) { throw Object.assign(new Error(message), { status: 422 }); }
 function text(value, limit, label) {
@@ -11,7 +12,7 @@ export function validateGeneratedListing(value) {
   if (!Array.isArray(value.tags) || value.tags.length !== 13) invalid("AI must return exactly 13 tags.");
   const tags = value.tags.map(tag => text(tag, 20, "tag").toLowerCase());
   if (new Set(tags).size !== 13) invalid("AI tags must be unique.");
-  return { title, description, tags, price: 9.99, currency: "USD", isDigital: true, state: "preview_only" };
+  return { ...listingDefaults({ title, description, tags, price: 9.99, currency: "USD" }), isDigital: true, state: "preview_only" };
 }
 function parseModelResponse(raw) {
   const response = typeof raw === "string" ? raw : raw?.response;
@@ -28,7 +29,8 @@ export async function generateListingPreview(ai, { label, pdfName, imageNames })
     "You write accurate Etsy SEO metadata for ORIGINAL, printable children's coloring books.",
     "Return ONLY JSON object with title, description, tags.",
     "Exactly 13 different natural lower-case tags, each at most 20 characters.",
-    "Title <=140 characters; description <=5000. Say digital PDF download, no physical shipping.",
+    "Title <=140 characters, preferably fewer than 15 words with the product noun and its useful traits first. Description <=4500. Say digital PDF download, no physical shipping.",
+    "Use plain keyword tags without # symbols. Do not repeat filler keywords or use unsupported title symbols.",
     "Use only the supplied facts. Do NOT invent page counts, ages, character names, legal licenses, or specific contents.",
     "Focus on product-relevant search phrases. Do not mention copyrighted brands.",
     "Include customer-friendly printing and digital download wording."
@@ -45,3 +47,4 @@ export async function generateListingPreview(ai, { label, pdfName, imageNames })
   }
   throw lastError;
 }
+

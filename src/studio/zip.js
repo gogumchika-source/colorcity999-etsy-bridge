@@ -46,6 +46,7 @@ function verifySignature(bytes, kind) {
   if (kind === "image/png") return head(137, 80, 78, 71, 13, 10, 26, 10);
   if (kind === "image/jpeg") return head(255, 216, 255);
   if (kind === "image/webp") return head(82, 73, 70, 70) && bytes[8] === 87 && bytes[9] === 69 && bytes[10] === 66 && bytes[11] === 80;
+  if (kind === "application/json") { try { const value = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)); return value && typeof value === 'object' && !Array.isArray(value); } catch { return false; } }
   return false;
 }
 
@@ -75,14 +76,16 @@ export async function extractListingPackage(buffer) {
     pos = after;
     if (!name || name.startsWith("/") || name.includes("\\") || name.split("/").some(seg => seg === ".." || seg === ".") || /^[a-z]:/i.test(name)) fail("Unsafe ZIP path.");
     if (name.endsWith("/")) continue;
+    const isListing = name === 'listing.json';
     const ext = suffix(name);
-    if (!ext) continue; // harmless README / metadata is ignored
-    const kind = types[ext], limit = kind === "application/pdf" ? 20_000_000 : 10_000_000;
+    if (!ext && !isListing) continue; // harmless README is ignored
+    const kind = isListing ? 'application/json' : types[ext], limit = isListing ? 32000 : kind === "application/pdf" ? 20_000_000 : 10_000_000;
     if (expanded > limit || (total += expanded) > MAX_TOTAL) fail("ZIP contains files beyond size limits.");
     entries.push({ name, kind, method, checksum, compressed, expanded, local, limit });
   }
   if (pos !== start + directorySize) fail("ZIP directory length mismatch.");
   const pdfs = entries.filter(x => x.kind === "application/pdf");
+  if (entries.filter(x => x.kind === 'application/json').length > 1) fail('ZIP contains duplicate listing metadata.');
   const images = entries.filter(x => x.kind.startsWith("image/"));
   if (pdfs.length !== 1 || images.length < 1 || images.length > 10) fail("ZIP needs exactly one PDF and 1–10 JPG/PNG/WebP previews.");
   const results = [];
@@ -96,5 +99,8 @@ export async function extractListingPackage(buffer) {
   }
   const rank = item => /(^|\/)(cover|front|hero)([-_.]|$)/i.test(item.name) ? -1 : 0;
   const orderedImages = results.filter(x => x.kind.startsWith("image/")).sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
-  return { pdf: results.find(x => x.kind === "application/pdf"), images: orderedImages, count: entries.length };
+  const metadata = results.find(x => x.kind === 'application/json');
+  return { pdf: results.find(x => x.kind === "application/pdf"), images: orderedImages, count: entries.length,
+    listingMetadata: metadata ? JSON.parse(new TextDecoder().decode(metadata.bytes)) : null };
 }
+

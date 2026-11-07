@@ -38,7 +38,7 @@ function humanLabel(filename) {
 export async function handleStudio(request, env, { authorize = requireStudioOwner } = {}) {
   const url = new URL(request.url);
   const routes = { '/studio/connect': ['POST', '/connect'], '/studio/oauth/callback': ['GET', '/callback'],
-    '/studio/connection': ['GET', '/connection'], '/studio/taxonomy': ['GET', '/taxonomy'], '/studio/draft': ['POST', '/draft'] };
+    '/studio/connection': ['GET', '/connection'], '/studio/taxonomy': ['GET', '/taxonomy'], '/studio/draft': ['POST', '/draft'], '/studio/prepare': ['POST', '/prepare'] };
   const route = routes[url.pathname];
   if (!["/studio", "/studio/preview", "/studio/ready"].includes(url.pathname) && !route) error(404, "Not found.");
   if (route && request.method !== route[0]) error(405, "Method not allowed.");
@@ -55,7 +55,7 @@ export async function handleStudio(request, env, { authorize = requireStudioOwne
     const internalHeaders = new Headers();
     if (request.headers.has("Cookie")) internalHeaders.set("Cookie", request.headers.get("Cookie"));
     let body;
-    if (url.pathname === "/studio/draft") {
+    if (url.pathname === "/studio/draft" || url.pathname === '/studio/prepare') {
       if (!request.headers.get("Content-Type")?.startsWith("multipart/form-data;")) error(415, "Upload your ZIP and reviewed listing details.");
       internalHeaders.set("Content-Type", request.headers.get("Content-Type"));
       body = await boundedBody(request, 20_100_000);
@@ -69,6 +69,10 @@ export async function handleStudio(request, env, { authorize = requireStudioOwne
       const connection = await (await stub.fetch("https://studio.internal/ready")).json();
       readiness.etsyConnection = connection;
       readiness.etsyListingWriteScope = connection.listingWriteScope;
+      readiness.oauthRecord = connection.connected ? 'present' : 'absent';
+      readiness.readyForFutureDraftIntegration = connection.draftCreationEnabled;
+      readiness.checks.grantStatusSource = 'studio_account_storage';
+      readiness.note = 'Studio account storage confirms the grant. The connection endpoint performs the separate live Etsy shop check.';
       readiness.readyForDraft = connection.draftCreationEnabled;
       readiness.publishingEnabled = false;
     }

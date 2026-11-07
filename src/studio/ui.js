@@ -3,10 +3,17 @@ export function renderStudio() {
   return new Response(String.raw`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ColorCity999 | Listing Studio</title><style>
 :root{font-family:system-ui,sans-serif;color:#292137;background:#f6f3ff}*{box-sizing:border-box}body{margin:0;padding:32px 16px}main{max-width:920px;margin:auto}h1{margin:0;font-size:2rem}p{line-height:1.6}.muted{color:#675e76}header{margin-bottom:24px}.panel{background:white;padding:26px;border-radius:20px;box-shadow:0 3px 18px #30135410;margin-bottom:18px}label{display:block;margin:14px 0 6px;font-weight:650}input,select,textarea{width:100%;padding:12px;border:1px solid #c8bfd9;border-radius:9px;background:white;font:inherit}textarea{min-height:180px}input[type=checkbox]{width:auto;margin-right:8px}button{border:0;border-radius:10px;padding:13px 18px;background:#7549c9;color:white;font-weight:700;cursor:pointer;margin-top:18px}button:disabled{opacity:.55;cursor:default}.state{margin-top:14px;white-space:pre-wrap}img{max-width:100%;max-height:350px;object-fit:contain;border-radius:12px}a{color:#6239aa}#files{white-space:pre-wrap}.warning{border-left:4px solid #b87516;padding-left:12px}[hidden]{display:none!important}
-</style></head><body><main><header><h1>ColorCity999 Listing Studio</h1><p class="muted">Upload your book, review the listing, then save an Etsy draft. Publishing always needs your separate approval.</p></header>
+</style></head><body><main><header><h1>ColorCity999 Listing Studio</h1><p class="muted">Give your product in chat. Its listing and files are prepared for an unpublished Etsy draft. You review and press Publish in Etsy.</p></header>
 <section class="panel"><h2>Your Etsy connection</h2><p id="readiness">Checking private Studio settings…</p>
 <form method="post" action="/studio/connect"><button id="connect">Connect Etsy for drafts</button></form>
 <p class="muted">Only your ColorCity999 shop can connect. Publishing is disabled in this tool.</p></section>
+<section class="panel"><h2>Your product, ready for Etsy</h2>
+<p>When you send a product in chat, its actual PDF and images are checked and its title, description, 13 search tags and category are prepared for you.</p>
+<p class="muted">Defaults: $9.99 USD · AI-artwork disclosure included · Unpublished draft only</p>
+<form id="preparedForm"><label for="preparedZip">Prepared product ZIP</label><input id="preparedZip" type="file" accept=".zip,application/zip" required>
+<button id="prepareDraft" disabled>Upload prepared draft</button></form>
+<p class="state" id="preparedStatus" role="status"></p><a id="preparedLink" hidden target="_blank" rel="noopener noreferrer">Open draft in Etsy to review and publish</a></section>
+<details><summary>Manual preview and editing</summary>
 <section class="panel"><h2>1. Upload your book</h2><form id="form">
 <label for="zip">One ZIP containing exactly one PDF and 1–10 cover/preview images</label><input id="zip" type="file" accept=".zip,application/zip" required>
 <p class="muted">Up to 20 MB. Use JPG or PNG images when saving to Etsy. Your original PDF is the customer download.</p>
@@ -24,7 +31,7 @@ export function renderStudio() {
 <button type="button" id="saveDraft" disabled>Save draft to Etsy</button><div id="draftStatus" class="state" role="status"></div>
 <a id="draftLink" hidden target="_blank" rel="noopener noreferrer">Review draft in Etsy</a>
 <p class="muted">This saves a new unpublished draft with your PDF and images. No existing listings are edited. Publishing requires a separate decision from you.</p></section>
-</main><script nonce="${nonce}">
+</details></main><script nonce="${nonce}">
 const el=id=>document.getElementById(id), status=el('status'), draftStatus=el('draftStatus');
 let connection=null, selectedZip=null, draftComplete=false, busy=false;
 function allowSave(){el('saveDraft').disabled=busy||!connection?.draftCreationEnabled||!selectedZip||!el('reviewed').checked||!el('category').value||draftComplete;}
@@ -34,8 +41,21 @@ el('zip').addEventListener('change',()=>{selectedZip=null;el('result').hidden=tr
 fetch('/studio/connection').then(async response=>{
  if(!response.ok)throw new Error();connection=await response.json();el('currency').textContent=connection.currency?'('+connection.currency+')':'';
  el('connect').textContent=connection.liveVerified?'Reconnect Etsy':'Connect Etsy for drafts';
- el('readiness').textContent=connection.liveVerified?'Owner login verified · Etsy connected · Draft creation ready · Publishing disabled':'Owner login verified · Connect Etsy before saving a draft. You can generate a preview first.';allowSave();
+ el('readiness').textContent=connection.liveVerified?'Owner login verified · Etsy connected · Draft creation ready · Publishing disabled':'Owner login verified · Connect Etsy before saving a draft. You can generate a preview first.';el('prepareDraft').disabled=!connection.draftCreationEnabled;allowSave();
 }).catch(()=>{el('readiness').textContent='Owner login verified · Etsy connection is not available yet. Preview generation remains available.';});
+el('preparedForm').addEventListener('submit',async event=>{
+ event.preventDefault();const file=el('preparedZip').files[0];if(!file)return;
+ if(file.size>20000000){el('preparedStatus').textContent='Prepared ZIP must be 20 MB or smaller.';return;}
+ el('prepareDraft').disabled=true;el('preparedZip').disabled=true;el('preparedLink').hidden=true;el('preparedStatus').textContent='Checking the product and category, uploading its draft, then verifying the saved details…';
+ try{
+  const body=new FormData();body.append('package',file);const {response,data}=await request('/studio/prepare',{method:'POST',body});
+  if(data.reviewUrl){const url=new URL(data.reviewUrl);if(url.origin==='https://www.etsy.com'){el('preparedLink').href=url.href;el('preparedLink').hidden=false;}}
+  if(!response.ok)throw new Error(data.error||'The draft could not be verified.');
+  if(!data.readbackVerified)throw new Error('The upload finished, but Etsy verification is incomplete. Review the draft before publishing.');
+  el('preparedStatus').textContent='Draft '+data.listingId+' is ready. Etsy read-back confirmed the listing details, price, AI disclosure, PDF and preview images. Open it in Etsy, review, and press Publish when you approve.';
+ }catch(error){el('preparedStatus').textContent=error.message;el('prepareDraft').disabled=!connection?.draftCreationEnabled;}
+ finally{el('preparedZip').disabled=false;}
+});
 el('form').addEventListener('submit',async event=>{
  event.preventDefault();const file=el('zip').files[0];if(!file)return;
  if(file.size>20000000){status.textContent='ZIP must be 20 MB or smaller.';return;}

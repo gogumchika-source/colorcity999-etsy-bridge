@@ -42,7 +42,7 @@ jobs:
         run: |
           node --input-type=module <<'NODE'
           const origin = 'https://colorcity999-listing-studio-preview.gogumchika.workers.dev';
-          for (const path of ['/studio', '/studio/ready', '/studio/connection', '/studio/draft']) {
+          for (const path of ['/studio', '/studio/ready', '/studio/connection', '/studio/draft', '/studio/prepare']) {
             const response = await fetch(origin + path, { redirect: 'manual', signal: AbortSignal.timeout(20000) });
             const location = response.headers.get('location');
             const protectedRoute = response.status === 302 && location && new URL(location).hostname.endsWith('.cloudflareaccess.com');
