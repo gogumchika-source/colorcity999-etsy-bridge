@@ -111,6 +111,17 @@ test('Studio protects connection and draft routes with owner authentication and 
   assert.equal(response.status, 503);
   assert.equal((await fixture().account.fetch(new Request('https://studio.internal/publish', { method: 'POST' }))).status, 404);
 });
+test('Studio forwards OAuth redirects to the browser rather than following them inside its account binding', async () => {
+  let forwarded;
+  const STUDIO_ACCOUNT = { idFromName: x => x, get: () => ({ fetch: async request => {
+    forwarded = request;
+    return new Response(null, { status: 302, headers: { Location: 'https://www.etsy.com/oauth/connect' } });
+  } }) };
+  const response = await handleStudio(new Request(STUDIO_ORIGIN + '/studio/connect', { method: 'POST', headers: { Origin: STUDIO_ORIGIN } }),
+    { STUDIO_ENABLED: 'preview', STUDIO_ACCOUNT }, { authorize: async () => {} });
+  assert.equal(forwarded.redirect, 'manual'); assert.equal(new URL(forwarded.url).pathname, '/connect');
+  assert.equal(response.status, 302); assert.equal(response.headers.get('Location'), 'https://www.etsy.com/oauth/connect');
+});
 test('UI script parses and exposes review, connection and draft controls without publication actions', async () => {
   const response = renderStudio();
   assert.equal(response.headers.get('Referrer-Policy'), 'same-origin'); // Native same-origin POST forms must keep their Origin header.

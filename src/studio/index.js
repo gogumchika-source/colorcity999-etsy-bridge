@@ -60,7 +60,7 @@ export async function handleStudio(request, env, { authorize = requireStudioOwne
       internalHeaders.set("Content-Type", request.headers.get("Content-Type"));
       body = await boundedBody(request, 20_100_000);
     }
-    return stub.fetch(new Request(target, { method: request.method, headers: internalHeaders, body }));
+    return stub.fetch(new Request(target, { method: request.method, headers: internalHeaders, body, redirect: 'manual' }));
   }
   if (url.pathname === "/studio/ready") {
     const readiness = await getStudioReadiness(env);
