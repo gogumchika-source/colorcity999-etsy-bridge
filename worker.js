@@ -13,6 +13,14 @@ export default {
     try {
       const url = new URL(request.url);
 
+      // Separate preview Worker must never expose production Etsy, OAuth or MCP routes.
+      if (env.STUDIO_ISOLATED === "true") {
+        if (url.pathname === "/studio" || url.pathname === "/studio/preview" || url.pathname === "/studio/ready") {
+          return await handleStudio(request, env);
+        }
+        return json({ error: "Not found" }, 404);
+      }
+
       if (url.pathname === "/") {
         return json({ service: "ColorCity999 Etsy Bridge", status: "online" });
       }
