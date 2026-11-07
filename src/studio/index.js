@@ -26,6 +26,16 @@ async function boundedBody(request, maximum = MAX_ZIP_BYTES) {
   for (const chunk of chunks) { data.set(chunk, offset); offset += chunk.byteLength; }
   return data;
 }
+function boundedForwardBody(request, maximum) {
+  if (Number(request.headers.get('Content-Length')) > maximum) error(413, 'ZIP exceeds 20 MB.');
+  if (!request.body) error(400, 'A ZIP file is required.');
+  let total = 0;
+  return request.body.pipeThrough(new TransformStream({ transform(chunk, controller) {
+    total += chunk.byteLength;
+    if (total > maximum) error(413, 'ZIP exceeds 20 MB.');
+    controller.enqueue(chunk);
+  } }));
+}
 function base64(bytes) {
   let out = "";
   for (let i = 0; i < bytes.length; i += 8192) out += String.fromCharCode(...bytes.subarray(i, i + 8192));
@@ -58,9 +68,9 @@ export async function handleStudio(request, env, { authorize = requireStudioOwne
     if (url.pathname === "/studio/draft" || url.pathname === '/studio/prepare') {
       if (!request.headers.get("Content-Type")?.startsWith("multipart/form-data;")) error(415, "Upload your ZIP and reviewed listing details.");
       internalHeaders.set("Content-Type", request.headers.get("Content-Type"));
-      body = await boundedBody(request, 20_100_000);
+      body = boundedForwardBody(request, 20_100_000);
     }
-    return stub.fetch(new Request(target, { method: request.method, headers: internalHeaders, body, redirect: 'manual' }));
+    return stub.fetch(new Request(target, { method: request.method, headers: internalHeaders, body, redirect: 'manual', ...(body ? { duplex: 'half' } : {}) }));
   }
   if (url.pathname === "/studio/ready") {
     const readiness = await getStudioReadiness(env);

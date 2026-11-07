@@ -182,6 +182,20 @@ test('Studio forwards OAuth redirects to the browser rather than following them 
   assert.equal(forwarded.redirect, 'manual'); assert.equal(new URL(forwarded.url).pathname, '/connect');
   assert.equal(response.status, 302); assert.equal(response.headers.get('Location'), 'https://www.etsy.com/oauth/connect');
 });
+test('prepared multipart upload reaches private account storage intact and rejects oversized declared bodies', async () => {
+  let calls=0;
+  const STUDIO_ACCOUNT={idFromName:x=>x,get:()=>({fetch:async request=>{
+    calls++;const form=await request.formData();assert.equal(await form.get('package').text(),'test product bytes');
+    return Response.json({received:true});
+  }})};
+  const body=new FormData();body.append('package',new Blob(['test product bytes']),'product.zip');
+  const request=new Request(STUDIO_ORIGIN+'/studio/prepare',{method:'POST',headers:{Origin:STUDIO_ORIGIN},body});
+  const response=await handleStudio(request,{STUDIO_ENABLED:'preview',STUDIO_ACCOUNT},{authorize:async()=>{}});
+  assert.equal(response.status,200);assert.equal(calls,1);
+  const tooLarge=new Request(STUDIO_ORIGIN+'/studio/prepare',{method:'POST',headers:{Origin:STUDIO_ORIGIN,'Content-Type':'multipart/form-data; boundary=test','Content-Length':'21000000'},body:'x'});
+  await assert.rejects(handleStudio(tooLarge,{STUDIO_ENABLED:'preview',STUDIO_ACCOUNT},{authorize:async()=>{}}),/exceeds 20 MB/);
+  assert.equal(calls,1);
+});
 test('UI script parses and exposes review, connection and draft controls without publication actions', async () => {
   const response = renderStudio();
   assert.equal(response.headers.get('Referrer-Policy'), 'same-origin'); // Native same-origin POST forms must keep their Origin header.
